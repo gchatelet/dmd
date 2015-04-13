@@ -466,9 +466,9 @@ extern (C++, std)
 
     version (linux)
     {
-	class vector(T, A = allocator!T)
+	struct vector(T, A = allocator!T)
 	{
-	    final void push_back(ref const T);
+	    void push_back(ref const T);
 	}
 
 	struct char_traits(T)
