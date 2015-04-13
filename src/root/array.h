@@ -235,6 +235,14 @@ struct Array
         memcpy(a->data, data, dim * sizeof(*data));
         return a;
     }
+
+    TYPE* begin() {
+        return data;
+    }
+
+    TYPE* end() {
+        return data + dim;
+    }
 };
 
 #endif
