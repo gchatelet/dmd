@@ -976,25 +976,34 @@ private:
         return type ? type->ty : TMAX;
     }
 
+    static bool equals(RootObject* lhs, RootObject* rhs) {
+        if(lhs->dyncast() != rhs->dyncast()) return false;
+        if (lhs->dyncast() != DYNCAST_TYPE) return lhs->equals(rhs);
+        TypeBasic* lhsBasic = static_cast<Type*>(lhs)->isTypeBasic();
+        TypeBasic* rhsBasic = static_cast<Type*>(rhs)->isTypeBasic();
+        if(lhsBasic == rhsBasic) return true;
+        if(lhsBasic && rhsBasic) return lhsBasic->ty == rhsBasic->ty;
+        if(!lhsBasic && !rhsBasic) return lhs->equals(rhs);
+        return false;
+    }
+
     static int getIndex(Objects& objects, RootObject* object) {
         assert(object);
         //
-//        printf("looking '%s' in ", object->toChars());
-//        for (RootObject* obj : objects)
-//            printf("'%s' ", obj->toChars());
+        printf("looking '%s' in ", object->toChars());
+        for (RootObject* obj : objects)
+            printf("'%s' ", obj->toChars());
+        printf("\n");
         //
-        const TY objBasicType = basicType(object);
-        for (int i = 0; i < objects.dim; ++i) {
-            RootObject* other = objects[i];
-            if (object->equals(other) || (objBasicType != TMAX && objBasicType == basicType(other)))
+        for (int i = 0; i < objects.dim; ++i)
+            if (equals(object, objects[i]))
                 return i;
-        }
         return -1;
     }
 
     void addSubstitution(RootObject* object) {
-      substitutions.push(object);
-//        printf("add substitutions %d %s\n", substitutions.dim, object->toChars());
+        substitutions.push(object);
+        printf("add substitutions %d %s\n", substitutions.dim, object->toChars());
     }
 
     bool substitute(const int index, const char code /* S or T */) {
@@ -1012,25 +1021,11 @@ private:
         return true;
     }
 
-    bool encodeSubstitution(RootObject* object) {
-        const int substitutionIndex = getIndex(substitutions, object);
-        if (substitutionIndex < 0) return false;
-        substitute(substitutionIndex, 'S');
+    bool encode(Objects& objects, RootObject* object, const char code) {
+        const int index = getIndex(objects, object);
+        if (index < 0) return false;
+        substitute(index, code);
         return true;
-    }
-
-    bool encodeTemplate(RootObject* object) {
-        const int templateIndex = getIndex(templateArguments, object);
-        if (templateIndex < 0) return false;
-        substitute(templateIndex, 'T');
-        return true;
-    }
-
-    bool encode(RootObject* object) {
-        if (encodeSubstitution(object)) return true;
-        addSubstitution(object);
-        if (encodeTemplate(object)) return true;
-        return false;
     }
 
 public:
@@ -1053,31 +1048,41 @@ public:
         assert(object);
         assert(encoding);
 //        printf("add basic %c\n", encoding);
-        if(isInTemplateArguments) {
+        if (isInTemplateArguments) {
             templateArguments.push(object);
-            return;
+            buffer.writeByte(encoding);
+        } else {
+            if (encode(substitutions, object, 'S'))
+                return;
+            if (encode(templateArguments, object, 'T')) {
+                addSubstitution(object);
+                return;
+            }
+            buffer.writeByte(encoding);
         }
-        if (encodeSubstitution(object)) return;
-        if (encodeTemplate(object)) return;
-        buffer.writeByte(encoding);
     }
 
     void pushNamedSymbol(RootObject* object, const char* name) {
+        assert(object);
         assert(name);
 //        printf("add symbol %s\n", name);
-        if(isInTemplateArguments) {
+        if (isInTemplateArguments) {
             templateArguments.push(object);
-            return;
+            buffer.printf("%d%s", strlen(name), name);
+        } else {
+            if (encode(substitutions, object, 'S'))
+                return;
+            addSubstitution(object);
+            if (encode(templateArguments, object, 'T'))
+                return;
+            buffer.printf("%d%s", strlen(name), name);
         }
-        if (encodeSubstitution(object)) return;
-        addSubstitution(object);
-        if (encodeTemplate(object)) return;
-        buffer.printf("%d%s", strlen(name), name);
     }
 
     void pushTemplatedNamedSymbol(TemplateInstance *symbol, const char* name) {
         assert(symbol);
         assert(symbol->aliasdecl);
+        assert(name);
         addSubstitution(symbol->aliasdecl);
         pushNamedSymbol(symbol, name);
     }
