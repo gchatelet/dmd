@@ -992,6 +992,11 @@ private:
         return -1;
     }
 
+    void addSubstitution(RootObject* object) {
+      substitutions.push(object);
+//        printf("add substitutions %d %s\n", substitutions.dim, object->toChars());
+    }
+
     bool substitute(const int index, const char code /* S or T */) {
         assert(index >= 0);
         //
@@ -1007,25 +1012,25 @@ private:
         return true;
     }
 
+    bool encodeSubstitution(RootObject* object) {
+        const int substitutionIndex = getIndex(substitutions, object);
+        if (substitutionIndex < 0) return false;
+        substitute(substitutionIndex, 'S');
+        return true;
+    }
+
+    bool encodeTemplate(RootObject* object) {
+        const int templateIndex = getIndex(templateArguments, object);
+        if (templateIndex < 0) return false;
+        substitute(templateIndex, 'T');
+        return true;
+    }
+
     bool encode(RootObject* object) {
-        if(isInTemplateArguments) {
-            templateArguments.push(object);
-            return false;
-        } else {
-            const int substitutionIndex = getIndex(substitutions, object);
-            if (substitutionIndex >= 0) {
-                substitute(substitutionIndex, 'S');
-                return true;
-            }
-            substitutions.push(object);
-//            printf("add substitutions %d %s\n", substitutions.dim, object->toChars());
-            const int templateIndex = getIndex(templateArguments, object);
-            if (templateIndex >= 0) {
-                substitute(templateIndex, 'T');
-                return true;
-            }
-            return false;
-        }
+        if (encodeSubstitution(object)) return true;
+        addSubstitution(object);
+        if (encodeTemplate(object)) return true;
+        return false;
     }
 
 public:
@@ -1048,28 +1053,40 @@ public:
         assert(object);
         assert(encoding);
 //        printf("add basic %c\n", encoding);
-        if (encode(object))
+        if(isInTemplateArguments) {
+            templateArguments.push(object);
             return;
+        }
+        if (encodeSubstitution(object)) return;
+        if (encodeTemplate(object)) return;
         buffer.writeByte(encoding);
-    }
-
-    void addSubstitution(RootObject* object) {
-        substitutions.push(object);
     }
 
     void pushNamedSymbol(RootObject* object, const char* name) {
         assert(name);
 //        printf("add symbol %s\n", name);
-        if (encode(object))
+        if(isInTemplateArguments) {
+            templateArguments.push(object);
             return;
+        }
+        if (encodeSubstitution(object)) return;
+        addSubstitution(object);
+        if (encodeTemplate(object)) return;
         buffer.printf("%d%s", strlen(name), name);
+    }
+
+    void pushTemplatedNamedSymbol(TemplateInstance *symbol, const char* name) {
+        assert(symbol);
+        assert(symbol->aliasdecl);
+        addSubstitution(symbol->aliasdecl);
+        pushNamedSymbol(symbol, name);
     }
 
     void enterTemplateArguments() {
         // All previous templates arguments are now valid substitutions.
 //        printf("enterTemplateArguments : transfer template arguments as substitutions\n");
         for(RootObject *argument : templateArguments) {
-            substitutions.push(argument);
+            addSubstitution(argument);
 //            printf("add substitutions %d %s\n", substitutions.dim, argument->toChars());
         }
         templateArguments.setDim(0);
@@ -1255,10 +1272,8 @@ class CppMangler : private Visitor {
         // function names are never substituted.
         if (templatedFunction)
             visit(templatedFunction);
-        else {
-            context.addSubstitution(aliasdecl);
-            context.pushNamedSymbol(symbol, symbol->name->string);
-        }
+        else
+            context.pushTemplatedNamedSymbol(symbol, symbol->name->string);
         context.enterTemplateArguments();
         // Encode template arguments.
         context.push('I');
