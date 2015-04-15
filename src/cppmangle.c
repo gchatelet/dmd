@@ -990,10 +990,10 @@ private:
     static int getIndex(Objects& objects, RootObject* object) {
         assert(object);
         //
-        printf("looking '%s' in ", object->toChars());
-        for (RootObject* obj : objects)
-            printf("'%s' ", obj->toChars());
-        printf("\n");
+//         printf("looking up '%s' in ", object->toChars());
+//         for (RootObject* obj : objects)
+//             printf("'%s' ", obj->toChars());
+//         printf("\n");
         //
         for (int i = 0; i < objects.dim; ++i)
             if (equals(object, objects[i]))
@@ -1003,7 +1003,7 @@ private:
 
     void addSubstitution(RootObject* object) {
         substitutions.push(object);
-        printf("add substitutions %d %s\n", substitutions.dim, object->toChars());
+//         printf("add substitutions %lu %s\n", substitutions.dim, object->toChars());
     }
 
     bool substitute(const int index, const char code /* S or T */) {
@@ -1109,7 +1109,7 @@ class AliasingVisitor: private Visitor {
 private:
     MangleContext& mangler;
     TypeBasic *basicType = nullptr;
-    AggregateDeclaration* aggregateDeclaration = nullptr;
+    ScopeDsymbol* declarationSymbol = nullptr;
 
     AliasingVisitor(MangleContext& mangler) :mangler(mangler) { }
 
@@ -1122,11 +1122,19 @@ private:
     }
 
     virtual void visit(TypeStruct *type) {
-        aggregateDeclaration = type->sym;
+        declarationSymbol = type->sym;
     }
 
     virtual void visit(TypeClass *type) {
-        aggregateDeclaration = type->sym;
+        declarationSymbol = type->sym;
+    }
+
+    virtual void visit(TypeEnum *type) {
+        declarationSymbol = type->sym;
+    }
+
+    virtual void visit(TypeTuple*type) {
+        assert(0);
     }
 
     void encodeAs(const char aliasChar /* P or R */, TypeNext* type) {
@@ -1150,11 +1158,11 @@ private:
     }
 
 public:
-    static void walkToType(Type* type, MangleContext& context, TypeBasic *&basicType, AggregateDeclaration*& aggregateDeclaration) {
+    static void walkToType(Type* type, MangleContext& context, TypeBasic *&basicType, ScopeDsymbol*& declarationSymbol) {
         AliasingVisitor visitor(context);
         type->accept(&visitor);
         basicType = visitor.basicType;
-        aggregateDeclaration = visitor.aggregateDeclaration;
+        declarationSymbol = visitor.declarationSymbol;
     }
 };
 
@@ -1164,11 +1172,11 @@ void mangleType(Type* type, MangleContext& context) {
 //    printf("mangle type %s\n", type->toChars());
     assert(type);
     TypeBasic * typeBasic;
-    AggregateDeclaration * typeAggregate;
-    AliasingVisitor::walkToType(type, context, typeBasic, typeAggregate);
+    ScopeDsymbol * declarationSymbol;
+    AliasingVisitor::walkToType(type, context, typeBasic, declarationSymbol);
 
-    if (typeAggregate) {
-        mangleSymbolHierarchy(typeAggregate, context);
+    if (declarationSymbol) {
+        mangleSymbolHierarchy(declarationSymbol, context);
     } else if (typeBasic) {
         context.pushBasicTypeSymbol(typeBasic, getBasicTypeMangling(typeBasic->ty));
     } else {
@@ -1298,7 +1306,7 @@ class CppMangler : private Visitor {
         context.exitTemplateArguments();
     }
 
-    virtual void visit(AggregateDeclaration *symbol) {
+    virtual void visit(ScopeDsymbol *symbol) {
         context.pushNamedSymbol(symbol, symbol->ident->string);
     }
 public:
