@@ -990,10 +990,10 @@ private:
     static int getIndex(Objects& objects, RootObject* object) {
         assert(object);
         //
-//         printf("looking up '%s' in ", object->toChars());
-//         for (RootObject* obj : objects)
-//             printf("'%s' ", obj->toChars());
-//         printf("\n");
+        printf("looking up '%s' in ", object->toChars());
+        for (RootObject* obj : objects)
+            printf("'%s' ", obj->toChars());
+        printf("\n");
         //
         for (int i = 0; i < objects.dim; ++i)
             if (equals(object, objects[i]))
@@ -1003,16 +1003,16 @@ private:
 
     void addSubstitution(RootObject* object) {
         substitutions.push(object);
-//         printf("add substitutions %lu %s\n", substitutions.dim, object->toChars());
+        printf("add substitutions %lu %s\n", substitutions.dim, object->toChars());
     }
 
     bool substitute(const int index, const char code /* S or T */) {
         assert(index >= 0);
         //
-//        printf("substitute element %d : %c", index, code);
-//        if(index > 0)
-//            printf("%d", index-1);
-//        printf("_\n");
+        printf("substitute element %d : %c", index, code);
+        if(index > 0)
+            printf("%d", index-1);
+        printf("_\n");
         //
         push(code);
         if (index > 0)
@@ -1047,7 +1047,7 @@ public:
     void pushBasicTypeSymbol(TypeBasic* object, char encoding) {
         assert(object);
         assert(encoding);
-//        printf("add basic %c\n", encoding);
+        printf("add basic %c\n", encoding);
         if (isInTemplateArguments) {
             templateArguments.push(object);
             buffer.writeByte(encoding);
@@ -1065,17 +1065,17 @@ public:
     void pushNamedSymbol(RootObject* object, const char* name) {
         assert(object);
         assert(name);
-//        printf("add symbol %s\n", name);
+        printf("add symbol %s\n", name);
         if (isInTemplateArguments) {
             templateArguments.push(object);
-            buffer.printf("%d%s", strlen(name), name);
+            pushName(name);
         } else {
             if (encode(substitutions, object, 'S'))
                 return;
             addSubstitution(object);
             if (encode(templateArguments, object, 'T'))
                 return;
-            buffer.printf("%d%s", strlen(name), name);
+            pushName(name);
         }
     }
 
@@ -1089,17 +1089,16 @@ public:
 
     void enterTemplateArguments() {
         // All previous templates arguments are now valid substitutions.
-//        printf("enterTemplateArguments : transfer template arguments as substitutions\n");
+        printf("enterTemplateArguments : transfer template arguments as substitutions\n");
         for(RootObject *argument : templateArguments) {
             addSubstitution(argument);
-//            printf("add substitutions %d %s\n", substitutions.dim, argument->toChars());
         }
         templateArguments.setDim(0);
         isInTemplateArguments = true;
     }
 
     void exitTemplateArguments() {
-//        printf("exitTemplateArguments\n");
+        printf("exitTemplateArguments\n");
         isInTemplateArguments = false;
     }
 };
