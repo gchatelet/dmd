@@ -935,10 +935,12 @@ Type* getTemplateReturnType(TemplateInstance* symbol) {
 }
 } // namespace
 
-class SymbolVisitor: private Visitor {
-    Dsymbols& symbols;
+typedef Array<ScopeDsymbol*> ScopedDSymbols;
 
-    SymbolVisitor(Dsymbols& symbols) : symbols(symbols) {}
+class SymbolVisitor: private Visitor {
+    ScopedDSymbols& symbols;
+
+    SymbolVisitor(ScopedDSymbols& symbols) : symbols(symbols) {}
 
     virtual void visit(Module* _) {
         // stop here
@@ -953,254 +955,45 @@ class SymbolVisitor: private Visitor {
         Dsymbol* parent = symbol->toParent();
         if (parent)
             parent->accept(this);
-        if (!isTemplateInstantiation(parent, symbol))
-            symbols.push(symbol);
+        if (!isTemplateInstantiation(parent, symbol) && symbol->isScopeDsymbol())
+            symbols.push(symbol->isScopeDsymbol());
     }
 
 public:
-    static void extractSymbolHierarchy(Dsymbol* leaf, Dsymbols& symbols) {
+    static void extractSymbolHierarchy(Dsymbol* leaf,ScopedDSymbols& symbols) {
         SymbolVisitor visitor(symbols);
         leaf->accept(&visitor);
     }
 };
 
-struct MangleContext {
-private:
-    Objects substitutions;
-    Objects templateArguments;
-    bool isInTemplateArguments = false;
+namespace {
 
-    static TY basicType(RootObject* obj) {
-        if(obj->dyncast() != DYNCAST_TYPE) return TMAX;
-        TypeBasic* type = static_cast<Type*>(obj)->isTypeBasic();
-        return type ? type->ty : TMAX;
-    }
-
-    static bool equals(RootObject* lhs, RootObject* rhs) {
-        if(lhs->dyncast() != rhs->dyncast()) return false;
-        if (lhs->dyncast() != DYNCAST_TYPE) return lhs->equals(rhs);
-        TypeBasic* lhsBasic = static_cast<Type*>(lhs)->isTypeBasic();
-        TypeBasic* rhsBasic = static_cast<Type*>(rhs)->isTypeBasic();
-        if(lhsBasic == rhsBasic) return true;
-        if(lhsBasic && rhsBasic) return lhsBasic->ty == rhsBasic->ty;
-        if(!lhsBasic && !rhsBasic) return lhs->equals(rhs);
-        return false;
-    }
-
-    static int getIndex(Objects& objects, RootObject* object) {
-        assert(object);
-        //
-        printf("looking up '%s' in ", object->toChars());
-        for (RootObject* obj : objects)
-            printf("'%s' ", obj->toChars());
-        printf("\n");
-        //
-        for (int i = 0; i < objects.dim; ++i)
-            if (equals(object, objects[i]))
-                return i;
-        return -1;
-    }
-
-    void addSubstitution(RootObject* object) {
-        substitutions.push(object);
-        printf("add substitutions %lu %s\n", substitutions.dim, object->toChars());
-    }
-
-    bool substitute(const int index, const char code /* S or T */) {
-        assert(index >= 0);
-        //
-        printf("substitute element %d : %c", index, code);
-        if(index > 0)
-            printf("%d", index-1);
-        printf("_\n");
-        //
-        push(code);
-        if (index > 0)
-            push('0' + index - 1);
-        push('_');
-        return true;
-    }
-
-    bool encode(Objects& objects, RootObject* object, const char code) {
-        const int index = getIndex(objects, object);
-        if (index < 0) return false;
-        substitute(index, code);
-        return true;
-    }
-
-public:
-    OutBuffer buffer;
-    MangleContext() {
-        buffer.writestring(prefix());
-    }
-    MangleContext(const MangleContext&) = delete;
-
-    void push(const char c) {
-        buffer.writeByte(c);
-    }
-
-    void pushName(const char* name) {
-        assert(name);
-        buffer.printf("%d%s", strlen(name), name);
-    }
-
-    void pushBasicTypeSymbol(TypeBasic* object, char encoding) {
-        assert(object);
-        assert(encoding);
-        printf("add basic %c\n", encoding);
-        if (isInTemplateArguments) {
-            templateArguments.push(object);
-            buffer.writeByte(encoding);
-        } else {
-            if (encode(substitutions, object, 'S'))
-                return;
-            if (encode(templateArguments, object, 'T')) {
-                addSubstitution(object);
-                return;
-            }
-            buffer.writeByte(encoding);
-        }
-    }
-
-    void pushNamedSymbol(RootObject* object, const char* name) {
-        assert(object);
-        assert(name);
-        printf("add symbol %s\n", name);
-        if (isInTemplateArguments) {
-            templateArguments.push(object);
-            pushName(name);
-        } else {
-            if (encode(substitutions, object, 'S'))
-                return;
-            addSubstitution(object);
-            if (encode(templateArguments, object, 'T'))
-                return;
-            pushName(name);
-        }
-    }
-
-    void pushTemplatedNamedSymbol(TemplateInstance *symbol, const char* name) {
-        assert(symbol);
-        assert(symbol->aliasdecl);
-        assert(name);
-        addSubstitution(symbol->aliasdecl);
-        pushNamedSymbol(symbol, name);
-    }
-
-    void enterTemplateArguments() {
-        // All previous templates arguments are now valid substitutions.
-        printf("enterTemplateArguments : transfer template arguments as substitutions\n");
-        for(RootObject *argument : templateArguments) {
-            addSubstitution(argument);
-        }
-        templateArguments.setDim(0);
-        isInTemplateArguments = true;
-    }
-
-    void exitTemplateArguments() {
-        printf("exitTemplateArguments\n");
-        isInTemplateArguments = false;
-    }
-};
-
-// Grab qualifiers up to the type.
-class AliasingVisitor: private Visitor {
-private:
-    MangleContext& mangler;
-    TypeBasic *basicType = nullptr;
-    ScopeDsymbol* declarationSymbol = nullptr;
-
-    AliasingVisitor(MangleContext& mangler) :mangler(mangler) { }
-
-    virtual void visit(TypeBasic *type) {
-        if(type->iscomplex())
-            mangler.push('C');
-        if(type->isimaginary())
-            mangler.push('G');
-        basicType = type;
-    }
-
-    virtual void visit(TypeStruct *type) {
-        declarationSymbol = type->sym;
-    }
-
-    virtual void visit(TypeClass *type) {
-        declarationSymbol = type->sym;
-    }
-
-    virtual void visit(TypeEnum *type) {
-        declarationSymbol = type->sym;
-    }
-
-    virtual void visit(TypeTuple*type) {
-        assert(0);
-    }
-
-    void encodeAs(const char aliasChar /* P or R */, TypeNext* type) {
-        mangler.push(aliasChar);
-        assert(type->next);
-        if (type->next->isConst())
-            mangler.push('K');
-        type->next->accept(this);
-    }
-
-    virtual void visit(TypeSArray* type_array) {
-        encodeAs('P', type_array);
-    }
-
-    virtual void visit(TypePointer *type_pointer) {
-        encodeAs('P', type_pointer);
-    }
-
-    virtual void visit(TypeReference *type_reference) {
-        encodeAs('R', type_reference);
-    }
-
-public:
-    static void walkToType(Type* type, MangleContext& context, TypeBasic *&basicType, ScopeDsymbol*& declarationSymbol) {
-        AliasingVisitor visitor(context);
-        type->accept(&visitor);
-        basicType = visitor.basicType;
-        declarationSymbol = visitor.declarationSymbol;
-    }
-};
-
-void mangleSymbolHierarchy(Dsymbol* symbol, MangleContext& context);
-
-void mangleType(Type* type, MangleContext& context) {
-//    printf("mangle type %s\n", type->toChars());
-    assert(type);
-    TypeBasic * typeBasic;
-    ScopeDsymbol * declarationSymbol;
-    AliasingVisitor::walkToType(type, context, typeBasic, declarationSymbol);
-
-    if (declarationSymbol) {
-        mangleSymbolHierarchy(declarationSymbol, context);
-    } else if (typeBasic) {
-        context.pushBasicTypeSymbol(typeBasic, getBasicTypeMangling(typeBasic->ty));
-    } else {
-        assert(0);
-    }
-}
-
-bool isStdNamespace(Dsymbol* symbol) {
+static bool isStdNamespace(Dsymbol* symbol) {
+    assert(symbol);
     return symbol->isNspace() && Id::std->equals(symbol->ident);
 }
 
-bool isTypeChar(RootObject* object) {
-    if(object->dyncast() != DYNCAST_TYPE) return false;
+static bool isTypeChar(RootObject* object) {
+    if (object->dyncast() != DYNCAST_TYPE) return false;
     TypeBasic* typeBasic = static_cast<Type*>(object)->isTypeBasic();
     return typeBasic && typeBasic->ty == Tchar && typeBasic->isNaked();
 }
 
-bool isAllocator(RootObject* object) {
-    if(object->dyncast() != DYNCAST_TYPE) return false;
+static bool isAllocator(RootObject* object) {
+    if (object->dyncast() != DYNCAST_TYPE) return false;
     TypeBasic* typeBasic = static_cast<Type*>(object)->isTypeBasic();
     return typeBasic && typeBasic->ty == Tchar && typeBasic->isNaked();
 }
 
-bool isCharTemplate(Identifier* identifier, RootObject* object) {
-    if(object->dyncast() != DYNCAST_TYPE) return false;
+static bool isAllocatorTemplate(Dsymbol* symbol) {
+    TemplateInstance* templateInstance = symbol->isTemplateInstance();
+    if (!templateInstance) return false;
+    if (!Id::allocator->equals(templateInstance->name)) return false;
+    return true;
+}
+
+static bool isCharTemplate(Identifier* identifier, RootObject* object) {
+    if (object->dyncast() != DYNCAST_TYPE) return false;
     Dsymbol* symbol = static_cast<Type*>(object)->toDsymbol(nullptr);
     if (!symbol) return false;
     StructDeclaration* structDeclaration = symbol->isStructDeclaration();
@@ -1215,186 +1008,648 @@ bool isCharTemplate(Identifier* identifier, RootObject* object) {
     return templateArguments.dim == 1 && isTypeChar(templateArguments[0]);
 }
 
-bool isBasicStreamTemplate(Identifier* identifier, Dsymbol* symbol) {
+static bool isBasicStreamTemplate(Identifier* identifier, Dsymbol* symbol) {
     TemplateInstance* templateInstance = symbol->isTemplateInstance();
     if (!templateInstance) return false;
     if (!identifier->equals(templateInstance->name)) return false;
     assert(templateInstance->tiargs);
     Objects& templateArguments = *templateInstance->tiargs;
-    return templateArguments.dim == 2 && isTypeChar(templateArguments[0]) && isCharTemplate(Id::char_traits, templateArguments[1]);
+    return templateArguments.dim == 2 && isTypeChar(templateArguments[0])
+            && isCharTemplate(Id::char_traits, templateArguments[1]);
 }
 
-bool isBasicStringTemplate(Dsymbol* symbol) {
+static bool isBasicStringTemplate(Dsymbol* symbol) {
     TemplateInstance* templateInstance = symbol->isTemplateInstance();
     if (!templateInstance) return false;
     if (!Id::basic_string->equals(templateInstance->name)) return false;
     assert(templateInstance->tiargs);
     Objects& templateArguments = *templateInstance->tiargs;
-    return templateArguments.dim == 3 && isTypeChar(templateArguments[0]) && isCharTemplate(Id::char_traits, templateArguments[1]) && isCharTemplate(Id::allocator, templateArguments[2]);
+    return templateArguments.dim == 3 && isTypeChar(templateArguments[0])
+            && isCharTemplate(Id::char_traits, templateArguments[1])
+            && isCharTemplate(Id::allocator, templateArguments[2]);
 }
 
-char getSubstitution(Dsymbols& symbols) {
-    if (!isStdNamespace(symbols[0]))
-        return 0;
-    symbols.remove(0);
-    if (symbols.dim == 0)
-        return 't';
-    Dsymbol* symbol = symbols[0];
-    if (isBasicStreamTemplate(Id::basic_iostream, symbol)) {
-        symbols.remove(0);
-        return 'd';
-    } else if (isBasicStreamTemplate(Id::basic_ostream, symbol)) {
-        symbols.remove(0);
-        return 'o';
-    } else if (isBasicStreamTemplate(Id::basic_istream, symbol)) {
-        symbols.remove(0);
-        return 'i';
-    } else if (isBasicStringTemplate(symbol)) {
-        symbols.remove(0);
-        return 's';
-    }
-    return 't';
-}
+}  // namespace
 
-void compress(Dsymbols& symbols, MangleContext& context) {
-    assert(symbols.dim > 0);
-    const char substitution = getSubstitution(symbols);
-    if(substitution) {
-        context.push('S');
-        context.push(substitution);
-    }
-}
-
-class CppMangler : private Visitor {
-    MangleContext& context;
-
-    CppMangler(MangleContext& context) : context(context) {}
-
-    virtual void visit(Nspace *symbol) {
-        context.pushNamedSymbol(symbol, symbol->ident->string);
-    }
-
-    virtual void visit(FuncDeclaration *symbol) {
-        context.pushName(symbol->ident->string);
-    }
-
-    virtual void visit(TemplateInstance *symbol) {
-        Dsymbol *aliasdecl = symbol->aliasdecl;
-        FuncDeclaration *templatedFunction = symbol->aliasdecl->isFuncDeclaration();
-        // function names are never substituted.
-        if (templatedFunction)
-            visit(templatedFunction);
-        else
-            context.pushTemplatedNamedSymbol(symbol, symbol->name->string);
-        context.enterTemplateArguments();
-        // Encode template arguments.
-        context.push('I');
-        assert(symbol->tiargs);
-        Objects* arguments = symbol->tiargs;
-        assert(arguments);
-        if (arguments->dim > 0) {
-            for (RootObject* argument : *arguments) {
-                assert(argument->dyncast() == DYNCAST_TYPE);
-                Type* argumentType = static_cast<Type*>(argument);
-                mangleType(argumentType, context);
-            }
-        } else {
-            context.push('v');
-        }
-        context.push('E');
-        context.exitTemplateArguments();
-    }
-
-    virtual void visit(ScopeDsymbol *symbol) {
-        context.pushNamedSymbol(symbol, symbol->ident->string);
-    }
+template<typename T>
+struct ArraySlice {
+private:
+    T* begin_;
+    T* end_;
 public:
-    static void mangle(Dsymbol* symbol, MangleContext& context) {
-        assert(symbol);
-        CppMangler visitor(context);
-        symbol->accept(&visitor);
+    ArraySlice(T* begin, T* end) : begin_(begin), end_(end) {
+        assert(end >= begin);
     }
-    static void mangle(Dsymbols& scopes, MangleContext& context) {
-        assert(scopes.dim > 0);
-        const bool isNested = scopes.dim > 1;
-        if (isNested)
-            context.push('N');
-        // Add constness if last symbol is a member function.
-        Dsymbol* tail = scopes.tos();
-        Declaration* declaration = tail ? tail->isDeclaration() : nullptr;
-        if (declaration && declaration->type->isConst())
-            context.push('K');
-        // Compress classic abbreviations
-        compress(scopes, context);
-        for (int i = 0; i < scopes.dim; ++i)
-            mangle(scopes[i], context);
-        if (isNested)
-            context.push('E');
+    ArraySlice(const ArraySlice& other) : begin_(other.begin_), end_(other.end_) {
+        assert(end_ >= begin_);
+    }
+    bool empty() const { return begin_ == end_; }
+    size_t size() const { return end_ - begin_; }
+    T* begin() { assert(!empty()); return begin_; }
+    T* end() { assert(!empty()); return end_; }
+    T& front() { assert(!empty()); return *begin_; }
+    T& back() { assert(!empty()); return *(end_-1); }
+    T& popFront() { assert(!empty()); return *begin_++; }
+    T& popBack() { assert(!empty()); return *(end_-- - 1); }
+    T& operator[](size_t index) { assert(index<size()); return *(begin_ + index); }
+};
+
+struct Indirection {
+    enum Encoding {
+        ERROR, REFERENCE, POINTER, FUNCTION
+    } encoding;
+    bool isConst;
+    Indirection(const Encoding encoding, const bool isConst) :
+            encoding(encoding), isConst(isConst) {
+    }
+    Indirection() :
+            encoding(ERROR), isConst(false) {
     }
 };
 
-void mangleSymbolHierarchy(Dsymbol* symbol, MangleContext& context) {
-    assert(symbol);
-    Dsymbols symbols;
-    SymbolVisitor::extractSymbolHierarchy(symbol, symbols);
-    CppMangler::mangle(symbols, context);
-    // If template function add return type.
-    TemplateInstance *tmplInstance = symbols.tos() ? symbols.tos()->isTemplateInstance() : nullptr;
-    if (tmplInstance) {
-        Type* returnType = getTemplateReturnType(tmplInstance);
-        if (returnType) {
-            mangleType(returnType, context);
+typedef Array<Indirection> Indirections;
+
+enum SubstitutionType {
+    SUBSTITUTION_NONE = 0, // no substitution
+    SUBSTITUTION_SYMBOL,
+    SUBSTITUTION_TEMPLATE_ARGUMENT,
+    ABBREVIATION_STD = 't', // <substitution> ::= St # ::std::
+    ABBREVIATION_STD_ALLOCATOR = 'a', // <substitution> ::= Sa # ::std::allocator
+    ABBREVIATION_STD_STRING = 'b', // <substitution> ::= Sb # ::std::basic_string
+    ABBREVIATION_STD_STRING_TMPL = 's', // <substitution> ::= Ss # ::std::basic_string < char, std::char_traits<char>, std::allocator<char> >
+    ABBREVIATION_STD_ISTREAM_TMPL = 'i', // <substitution> ::= Si # ::std::basic_istream<char, std::char_traits<char> >
+    ABBREVIATION_STD_OSTREAM_TMPL = 'o', // <substitution> ::= So # ::std::basic_ostream<char, std::char_traits<char> >
+    ABBREVIATION_STD_IOSTREAM_TMPL = 'd', // <substitution> ::= Sd # ::std::basic_iostream<char, std::char_traits<char> >
+};
+
+struct Substitution {
+    Dsymbol* symbol = nullptr;
+    SubstitutionType type = SUBSTITUTION_NONE;
+    size_t index = 0;
+    Substitution() {}
+    Substitution(Dsymbol* symbol, SubstitutionType type, size_t index = 0) :
+            symbol(symbol), type(type), index(index) {
+    }
+    operator bool() const { return type != SUBSTITUTION_NONE; }
+    bool isAbbreviation() const {
+        switch (type) {
+        case SUBSTITUTION_NONE:
+        case SUBSTITUTION_SYMBOL:
+        case SUBSTITUTION_TEMPLATE_ARGUMENT:
+            return false;
+        default:
+            return true;
         }
     }
-}
+    bool isStd() const {
+        return type == ABBREVIATION_STD;
+    }
+};
+
+struct ManglerContext {
+private:
+    Objects substituted;
+    Objects templateArguments;
+    bool substituteTemplateArguments = false;
+
+    static SubstitutionType getAbbreviation(Dsymbol* symbol) {
+        if (isStdNamespace(symbol))
+            return ABBREVIATION_STD;
+        if (isAllocator(symbol) || isAllocatorTemplate(symbol))
+            return ABBREVIATION_STD_ALLOCATOR;
+        if (isBasicStreamTemplate(Id::basic_iostream, symbol))
+            return ABBREVIATION_STD_IOSTREAM_TMPL;
+        if (isBasicStreamTemplate(Id::basic_ostream, symbol))
+            return ABBREVIATION_STD_OSTREAM_TMPL;
+        if (isBasicStreamTemplate(Id::basic_istream, symbol))
+            return ABBREVIATION_STD_ISTREAM_TMPL;
+        if (isBasicStringTemplate (symbol))
+            return ABBREVIATION_STD_STRING_TMPL;
+        return SUBSTITUTION_NONE;
+    }
+
+    static TypeBasic* isTypeBasic(RootObject* object) {
+        assert(object);
+        return object->dyncast() == DYNCAST_TYPE ? static_cast<Type*>(object)->isTypeBasic() : nullptr;
+    }
+    static bool equals(RootObject* lhs, RootObject* rhs) {
+        if (lhs->dyncast() != rhs->dyncast()) return false;
+        if (lhs->dyncast() != DYNCAST_TYPE) return lhs->equals(rhs);
+        TypeBasic* lhsBasic = static_cast<Type*>(lhs)->isTypeBasic();
+        TypeBasic* rhsBasic = static_cast<Type*>(rhs)->isTypeBasic();
+        if (lhsBasic == rhsBasic) return true;
+        if (lhsBasic && rhsBasic) return lhsBasic->ty == rhsBasic->ty;
+        if (!lhsBasic && !rhsBasic) return lhs->equals(rhs);
+        return false;
+    }
+    static int reverseFind(Objects& symbols, RootObject* symbol) {
+        if (symbols.dim) {
+            for (int i = symbols.dim - 1; i >= 0; --i) {
+                if (equals(symbol, symbols[i])) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+    static bool reverseFind(Objects& symbols, RootObject* symbol, int& index) {
+        index = reverseFind(symbols, symbol);
+        return index >= 0;
+    }
+    static void debugSubstitution(Objects& objects, RootObject* object, char encoding) {
+        const int index = reverseFind(objects, object);
+        assert(index >= 0);
+        const char c = index == 0 ? ' ' : '0' + index - 1;
+        printf("CONTEXT: '%s' is %c%c_\n", object->toChars(), encoding, c);
+
+    }
+    void pushSubstitutionIfNotPresent(RootObject* symbol) {
+        if (!substituteTemplateArguments && isTypeBasic(symbol))
+            return;
+        if (reverseFind(substituted, symbol) < 0) {
+            substituted.push(symbol);
+            debugSubstitution(substituted, symbol, 'S');
+        }
+    }
+    void pushTemplateArgumentIfNotPresent(RootObject* symbol) {
+        if (reverseFind(templateArguments, symbol) < 0) {
+            templateArguments.push(symbol);
+            debugSubstitution(templateArguments, symbol, 'T');
+        }
+    }
+    bool isTemplateArgumentSubstitution(RootObject* symbol, int& index) {
+        const bool isSubstitution = reverseFind(templateArguments, symbol, index);
+        if (isSubstitution)
+            pushSubstitutionIfNotPresent(symbol);
+        return isSubstitution;
+    }
+    bool isSubstitution(RootObject* symbol, int& index) {
+        return reverseFind(substituted, symbol, index);
+    }
+public:
+    void addTypeSubstitution(TypeBasic* symbol) {
+        if (substituteTemplateArguments)
+            pushTemplateArgumentIfNotPresent(symbol);
+    }
+    void addSymbolSubstitution(Dsymbol* symbol) {
+        TemplateInstance* templateInstance = symbol->isTemplateInstance();
+        const bool isDeclaration = symbol->isDeclaration();
+        const bool isTemplateDeclaration = templateInstance && templateInstance->aliasdecl->isDeclaration();
+        if (isDeclaration || isTemplateDeclaration)
+            return;
+        if (substituteTemplateArguments)
+            pushTemplateArgumentIfNotPresent(symbol);
+        else
+            pushSubstitutionIfNotPresent(symbol);
+    }
+    void enterTemplateArguments() {
+        substituteTemplateArguments = true;
+    }
+    void exitTemplateArguments(TemplateInstance* templateInstance) {
+        assert(templateInstance->aliasdecl);
+        // If this template instance is not a declaration we move
+        // the template arguments to current substitutions.
+        if (!templateInstance->aliasdecl->isDeclaration()) {
+            substituteTemplateArguments = false;
+            for (RootObject* symbol : templateArguments)
+                pushSubstitutionIfNotPresent(symbol);
+            templateArguments.setDim(0);
+        }
+        pushSubstitutionIfNotPresent(templateInstance);
+    }
+    Substitution getSubstitution(TypeBasic* current) {
+        int index = 0;
+        if (isSubstitution(current, index))
+            return Substitution(nullptr, SUBSTITUTION_SYMBOL, index);
+        if (isTemplateArgumentSubstitution(current, index))
+            return Substitution(nullptr, SUBSTITUTION_TEMPLATE_ARGUMENT, index);
+        return Substitution();
+    }
+    Substitution getSubstitution(ArraySlice<Dsymbol*> symbols) {
+        for (; symbols.size(); ) {
+            Dsymbol* current = symbols.popFront();
+            Dsymbol* parent = current->toParent();
+            TemplateInstance* templateInstance = parent ? parent->isTemplateInstance() : nullptr;
+            Dsymbol* candidate = templateInstance ? templateInstance : current;
+            int index = 0;
+            if (isSubstitution(candidate, index))
+                return Substitution(current, SUBSTITUTION_SYMBOL, index);
+            if (isTemplateArgumentSubstitution(candidate, index))
+                return Substitution(current, SUBSTITUTION_TEMPLATE_ARGUMENT, index);
+            SubstitutionType type = getAbbreviation(candidate);
+            if (type != SUBSTITUTION_NONE)
+                return Substitution(current, type);
+        }
+        return Substitution();
+    }
+};
+
+struct ManglerBuffer {
+private:
+    OutBuffer buffer;
+    void debug() {
+//        printf("BUFFER : '%.*s'\n", buffer.offset, buffer.data);
+    }
+    void put(char c) {
+        buffer.writeByte(c);
+    }
+public:
+    ManglerBuffer() {
+        buffer.writestring(prefix());
+    }
+    void startNested() { put('N'); }
+    void stopNested() { put('E'); }
+    void putConst(bool isConst) { if (isConst) put('K'); }
+    void putEmpty() { put('v'); }
+    void enterTemplateArguments() { put('I'); }
+    void exitTemplateArguments() { put('E'); }
+    void putIndirection(const Indirection& indirection) {
+        switch (indirection.encoding) {
+        case Indirection::FUNCTION:
+            put('F');
+            break;
+        case Indirection::POINTER:
+            put('P');
+            break;
+        case Indirection::REFERENCE:
+            put('R');
+            break;
+        case Indirection::ERROR:
+            assert(0);
+        }
+        putConst(indirection.isConst);
+        debug();
+    }
+    void putSubstitution(Substitution substitution) {
+        const SubstitutionType type = substitution.type;
+        assert(type != SUBSTITUTION_NONE);
+        if (type == SUBSTITUTION_TEMPLATE_ARGUMENT || type == SUBSTITUTION_SYMBOL) {
+            if (type == SUBSTITUTION_TEMPLATE_ARGUMENT)
+                put('T');
+            else if (type == SUBSTITUTION_SYMBOL)
+                put('S');
+            if (substitution.index > 0) {
+                assert(substitution.index <= 9);
+                put('0' + substitution.index - 1);
+            }
+            put('_');
+        } else {
+            put('S');
+            put(type);
+        }
+        debug();
+    }
+    void putBasicType(TypeBasic* basicType) {
+        put(getBasicTypeMangling(basicType->ty));
+        debug();
+    }
+    void putSymbol(Dsymbol* symbol, const char* name) {
+        buffer.printf("%d%s", strlen(name), name);
+        debug();
+    }
+    char* extractString() {
+        return buffer.extractString();
+    }
+};
+
+struct AliasedType : private Visitor {
+private:
+    void setTerminal(Type* symbolType, ScopeDsymbol* declarationSymbol) {
+        assert(symbolType);
+        this->targetType = symbolType;
+        this->declarationSymbol = declarationSymbol;
+    }
+
+    virtual void visit(TypeBasic *type) {
+        setTerminal(type, nullptr);
+    }
+
+    virtual void visit(TypeStruct *type) {
+        setTerminal(type, type->sym);
+    }
+
+    virtual void visit(TypeClass *type) {
+        setTerminal(type, type->sym);
+    }
+
+    virtual void visit(TypeEnum *type) {
+        setTerminal(type, type->sym);
+    }
+
+    virtual void visit(TypeTuple*type) {
+        assert(0);
+    }
+
+    void encodeAs(const Indirection::Encoding encoding, TypeNext* type) {
+        assert(type->next);
+        this->indirections.push(Indirection(encoding, type->next->isConst()));
+        type->next->accept(this);
+    }
+
+    virtual void visit(TypeSArray* type_array) {
+        encodeAs(Indirection::POINTER, type_array);
+    }
+
+    virtual void visit(TypePointer *type_pointer) {
+        encodeAs(Indirection::POINTER, type_pointer);
+    }
+
+    virtual void visit(TypeReference *type_reference) {
+        encodeAs(Indirection::REFERENCE, type_reference);
+    }
+
+    virtual void visit(TypeFunction *type_function) {
+        encodeAs(Indirection::FUNCTION, type_function);
+    }
+
+public:
+    Indirections indirections; // if symbol is referred to through reference or pointers (possibly const)
+    Type* targetType = nullptr; // the type of the symbol : struct, enum, class, basic
+    ScopeDsymbol* declarationSymbol = nullptr; // the declaration if custom type (struct, enum, class)
+
+    AliasedType(Type* type) {
+        type->accept(this);
+        assert(type);
+    }
+
+    void debug() {
+        for(const Indirection& indirection : indirections ) {
+            if(indirection.isConst)
+                printf("const ");
+            switch(indirection.encoding) {
+            case Indirection::FUNCTION: printf("F");break;
+            case Indirection::POINTER: printf("*");break;
+            case Indirection::REFERENCE: printf("&");break;
+            case Indirection::ERROR: assert(0);
+            }
+            printf("|");
+        }
+    }
+};
+
+struct SymbolHierarchy : private Visitor {
+private:
+    virtual void visit(Module* _) {
+        // stop here
+    }
+
+    // Walking up the hierarchy of symbols from the terminal.
+    // For instance std::vector<int>::empty()
+    // will produce symbols : empty, vector, vector!(int, allocator!int), std
+    void visit(Dsymbol* symbol) {
+        all_symbols.push(symbol);
+        Dsymbol* parent = symbol->toParent();
+        if (parent)
+            parent->accept(this);
+    }
+    void visit(TypeStruct* type) { type->sym->accept(this); }
+    void visit(TypeClass* type) { type->sym->accept(this); }
+    void visit(TypeEnum* type) { type->sym->accept(this); }
+    void visit(TypeBasic* type) { basicType = type; }
+
+    void finalize() {
+        if (all_symbols.dim == 0)
+            return;
+        printf("SYMBOLS : ");
+        for (Dsymbol* symbol : all_symbols) {
+            printf("%s ", symbol->toChars());
+        }
+        printf("\n");
+    }
+
+    static void debug(Dsymbol* symbol) {
+        if (symbol->isDeclaration()) {
+            printf("DECL(%s) ", symbol->toChars());
+        } else if (symbol->isTemplateInstance()) {
+            printf("TMPL_INST(%s) ", symbol->toChars());
+        } else if (symbol->isScopeDsymbol()) {
+            printf("SCOPE(%s) ", symbol->toChars());
+        } else {
+            assert(0);
+        }
+    }
+public:
+    Dsymbols all_symbols;
+    TypeBasic* basicType = nullptr;
+
+    SymbolHierarchy(Dsymbol* symbol) {
+        symbol->accept(this);
+        debug();
+    }
+
+    SymbolHierarchy(Type* type) {
+        type->accept(this);
+        debug();
+    }
+
+    void debug() {
+        printf("SYMBOLS : ");
+        for (Dsymbol* symbol : all_symbols)
+            debug(symbol);
+        if (basicType)
+            printf("BASIC(%s)", basicType->dstring);
+        printf("\n");
+    }
+};
+
+struct ScopedAliasedType {
+public:
+    const bool isConst = false;
+    AliasedType aliasedType;
+    SymbolHierarchy symbols;
+    ScopedAliasedType(Type* type) : isConst(type->isConst()), aliasedType(type), symbols(aliasedType.targetType) { }
+    void debug() {
+        aliasedType.debug();
+        if(isConst) printf("const ");
+        symbols.debug();
+    }
+};
+
+struct HighLevelMangler {
+private:
+    ManglerContext context;
+    ManglerBuffer buffer;
+
+    // ie. std::vector<int>::empty() symbols are mangled in the following order
+    // std, vector!(int, allocator!int), vector, empty
+    void mangleSymbol(Dsymbol* symbol) {
+        assert(symbol);
+        // Dropping symbols like 'vector' in the example above.
+        // They will be handled in the templateInstance branch.
+        const bool derivedFromTemplate = symbol->toParent()
+                && symbol->toParent()->isTemplateInstance();
+        if (derivedFromTemplate)
+            return;
+        TemplateInstance* templateInstance = symbol->isTemplateInstance();
+        // Branch corresponding to the 'vector!(int, allocator!int)' symbol
+        if (templateInstance) {
+            // First push the un-instantiated template symbol ('vector' in
+            // the example above)
+            context.addSymbolSubstitution(templateInstance->aliasdecl);
+            buffer.putSymbol(symbol, templateInstance->name->string);
+            context.enterTemplateArguments();
+            buffer.enterTemplateArguments();
+            // Encode template arguments.
+            assert(templateInstance->tiargs);
+            Objects* arguments = templateInstance->tiargs;
+            assert(arguments);
+            if (arguments->dim > 0) {
+                for (RootObject* argument : *arguments) {
+                    assert(argument->dyncast() == DYNCAST_TYPE);
+                    Type* argumentType = static_cast<Type*>(argument);
+                    ScopedAliasedType scopedAliasedType(argumentType);
+                    mangle(scopedAliasedType);
+                }
+            } else {
+                buffer.putEmpty();
+            }
+            buffer.exitTemplateArguments();
+            context.exitTemplateArguments(templateInstance);
+            // Lastly push the instantiated template symbol.
+            context.addSymbolSubstitution(templateInstance);
+        } else {
+            context.addSymbolSubstitution(symbol);
+            buffer.putSymbol(symbol, symbol->toChars());
+        }
+    }
+
+    static void popBackInclusive(ArraySlice<Dsymbol*>& slice, Dsymbol* symbol) {
+        // drop substituted symbols
+        for (Dsymbol* popped = slice.popBack(); popped != symbol;)
+            popped = slice.popBack();
+    }
+
+    static bool isNested(Dsymbol* symbol) {
+        Dsymbol* parent = symbol->toParent();
+        if (!parent)
+            return false;
+        if (parent->isTemplateInstance())
+            parent = parent->toParent();
+        return parent->isAggregateDeclaration() || parent->isNspace();
+    }
+
+    void mangleSymbolHierarchy(const bool isConst, Dsymbols& all_symbols, const bool qualified) {
+        assert(all_symbols.dim);
+        ArraySlice<Dsymbol*> symbols(all_symbols.begin(), all_symbols.end());
+        Substitution substitution = context.getSubstitution(symbols);
+        bool nested = isNested(all_symbols[0]);
+        const bool isStd = substitution.isStd();
+        if(isStd && !qualified)
+            nested = false;
+        if (nested) buffer.startNested();
+        buffer.putConst(isConst);
+        if (substitution) {
+//            printf("{%d} ", abbreviation);
+            popBackInclusive(symbols, substitution.symbol);
+            buffer.putSubstitution(substitution);
+        }
+        while (symbols.size()) {
+            mangleSymbol(symbols.back());
+            symbols.popBack();
+        }
+        if (nested) buffer.stopNested();
+    }
+
+    void mangle(const bool isConst, SymbolHierarchy& symbols, const bool qualified) {
+        if (symbols.basicType) {
+            const Substitution substitution = context.getSubstitution(symbols.basicType);
+            if (substitution) {
+                buffer.putSubstitution(substitution);
+            } else {
+                context.addTypeSubstitution(symbols.basicType);
+                buffer.putBasicType(symbols.basicType);
+            }
+        } else {
+            mangleSymbolHierarchy(isConst, symbols.all_symbols, qualified);
+        }
+//        printf("<");
+//        symbols.debug();
+//        printf(">");
+    }
+
+    void mangle(ScopedAliasedType& scopedType) {
+        for (const Indirection& indirection : scopedType.aliasedType.indirections)
+            buffer.putIndirection(indirection);
+        mangle(false, scopedType.symbols, scopedType.aliasedType.indirections.dim);
+    }
+public:
+    void mangle(Declaration *declaration) {
+        assert(declaration->linkage == LINKcpp);
+        SymbolHierarchy symbols(declaration);
+        mangle(declaration->type->isConst(), symbols, false);
+        // Encode function return argument if any.
+        assert(symbols.all_symbols.dim);
+        Dsymbol* firstSymbol = symbols.all_symbols[0];
+        Dsymbol* firstSymbolParent = firstSymbol->toParent();
+        if (!firstSymbolParent)
+            return;
+        TemplateInstance* templateInstance = firstSymbolParent->isTemplateInstance();
+        if (!templateInstance)
+            return;
+        Type* returnType = getTemplateReturnType(templateInstance);
+        if (returnType) {
+            ScopedAliasedType scopedAliasedType(returnType);
+            mangle(scopedAliasedType);
+        }
+    }
+
+    void mangleEmptyFunctionParameter() {
+        buffer.putEmpty();
+    }
+
+    void mangleFunctionParameter(Parameter* parameter ) {
+        const bool isReference = parameter->storageClass & (STCout | STCref);
+        Type* parameterType = parameter->type;
+        if (isReference)
+            parameterType = parameterType->referenceTo();
+        ScopedAliasedType scopedType(parameterType);
+        mangle(scopedType);
+    }
+
+    char* extractString() {
+        return buffer.extractString();
+    }
+};
 
 class CppMangleVisitor3: public Visitor {
 private:
-    MangleContext context;
+    HighLevelMangler context2;
 
 public:
-
     virtual void visit(FuncDeclaration *funDecl) {
         assert(funDecl->linkage == LINKcpp);
-//        printf("mangling function\n");
-        mangleSymbolHierarchy(funDecl, context);
+        context2.mangle(funDecl);
         // Add function parameters.
-//        printf("mangling function arguments\n");
         assert(funDecl->type);
         TypeFunction* typeFunction = static_cast<TypeFunction*>(funDecl->type);
         assert(typeFunction);
         Parameters* parameters = typeFunction->parameters;
         assert(parameters);
         if (parameters->dim) {
-            for (Parameter* parameter : *parameters) {
-                const bool isReference = parameter->storageClass & (STCout | STCref);
-                Type* parameterType = parameter->type;
-                if (isReference)
-                    parameterType = parameterType->referenceTo();
-                mangleType(parameterType, context);
-            }
+            for (Parameter* parameter : *parameters)
+                context2.mangleFunctionParameter(parameter);
         } else {
-            context.push('v');
+            context2.mangleEmptyFunctionParameter();
         }
     }
 
     virtual void visit(VarDeclaration *varDecl) {
-        assert(0);
+        context2.mangle(varDecl);
     }
 
     char * mangleOf() {
-        return context.buffer.extractString();
+        return context2.extractString();
     }
 };
 
 
 char *toCppMangle(Dsymbol *s)
 {
-    printf("%-30s: ", s->toChars());
+    printf("%-30s\n", s->toPrettyChars(true));
     CppMangleVisitor3 visitor;
     s->accept(&visitor);
     char * value = visitor.mangleOf();
-    printf(" %s\n", value);
+    printf(" %s\n----------------------------------\n", value);
     return value;
 }
 
