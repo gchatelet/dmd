@@ -1532,9 +1532,11 @@ private:
         assert(all_symbols.dim);
         ArraySlice<Dsymbol*> symbols(all_symbols.begin(), all_symbols.end());
         Substitution substitution = context.getSubstitution(symbols);
-        bool nested = isNested(all_symbols[0]);
+        Dsymbol* head = all_symbols[0];
+        bool nested = isNested(head);
+        const bool headFullySubstituted = substitution.symbol == head;
         const bool isStd = substitution.isStd();
-        if(isStd && !qualified)
+        if(headFullySubstituted || (isStd && !qualified))
             nested = false;
         if (nested) buffer.startNested();
         buffer.putConst(isConst);
