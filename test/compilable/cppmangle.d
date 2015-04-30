@@ -5,31 +5,33 @@
 version(linux):
 
 extern(C++) {
-    // free functions - test parameters
-    void a0(); static assert(a0.mangleof == "_Z2a0v");
-    void b0(int); static assert(b0.mangleof == "_Z2b0i");
-    void b1(int*); static assert(b1.mangleof == "_Z2b1Pi");
-    void b2(int[3]); static assert(b2.mangleof == "_Z2b2Pi");
-    void b3(int**); static assert(b3.mangleof == "_Z2b3PPi");
-    void c0(const int); static assert(c0.mangleof == "_Z2c0i");
-    void c1(const(int*)); static assert(c1.mangleof == "_Z2c1PKi");
-    void c2(const(int)*); static assert(c2.mangleof == "_Z2c2PKi");
-    void d0(ref int); static assert(d0.mangleof == "_Z2d0Ri");
-    void d1(const ref int); static assert(d1.mangleof == "_Z2d1RKi");
-    // struct member functions
-    struct Struct {
-        void foo(); static assert(foo.mangleof == "_ZN6Struct3fooEv");
-        void const_foo() const; static assert(const_foo.mangleof == "_ZNK6Struct9const_fooEv");
-    }
-    void e0(ref Struct); static assert(e0.mangleof == "_Z2e0R6Struct");
-    void e1(Struct); static assert(e1.mangleof == "_Z2e16Struct");
-    // class member functions
-    class Class {}
-    void f0(Class); static assert(f0.mangleof == "_Z2f05Class");
+//     // free functions - test parameters
+//     void a0(); static assert(a0.mangleof == "_Z2a0v");
+//     void b0(int); static assert(b0.mangleof == "_Z2b0i");
+//     void b1(int*); static assert(b1.mangleof == "_Z2b1Pi");
+//     void b2(int[3]); static assert(b2.mangleof == "_Z2b2Pi");
+//     void b3(int**); static assert(b3.mangleof == "_Z2b3PPi");
+//     void c0(const int); static assert(c0.mangleof == "_Z2c0i");
+//     void c1(const(int*)); static assert(c1.mangleof == "_Z2c1PKi");
+//     void c2(const(int)*); static assert(c2.mangleof == "_Z2c2PKi");
+//     void d0(ref int); static assert(d0.mangleof == "_Z2d0Ri");
+//     void d1(const ref int); static assert(d1.mangleof == "_Z2d1RKi");
+//     // struct member functions
+//     struct Struct {
+//         void foo(); static assert(foo.mangleof == "_ZN6Struct3fooEv");
+//         void const_foo() const; static assert(const_foo.mangleof == "_ZNK6Struct9const_fooEv");
+//     }
+//     void e0(ref Struct); static assert(e0.mangleof == "_Z2e0R6Struct");
+//     void e1(Struct); static assert(e1.mangleof == "_Z2e16Struct");
+//     // class member functions
+//     class Class {}
+//     void f0(Class); static assert(f0.mangleof == "_Z2f05Class");
     // free function templates
-    void t0(T)(T); static assert(t0!int.mangleof == "_Z2t0IiEvT_");
-    void t1(A,B,C)(A,ref B,C); static assert(t1!(int,char,uint).mangleof == "_Z2t1IicjEvT_RT0_T1_");
-    T t2(T)(T, T); static assert(t2!int.mangleof == "_Z2t2IiET_S0_S0_");
+    void t0(T)(); static assert(t0!int.mangleof == "_Z2t0IiEvv");
+    static assert(t0!(TStruct!(TStruct!(TStruct!int))).mangleof == "_Z2t0I7TStructIS0_IS0_IiEEEEvv");
+    void t1(T)(T); static assert(t1!int.mangleof == "_Z2t1IiEvT_");
+    void t2(A,B,C)(A,ref B,C); static assert(t2!(int,char,uint).mangleof == "_Z2t2IicjEvT_RT0_T1_");
+    T t3(T)(T, T); static assert(t3!int.mangleof == "_Z2t3IiET_S0_S0_");
     // template struct
     struct TStruct(A) {
         void f0();
