@@ -1250,7 +1250,7 @@ struct ManglerBuffer {
 private:
     OutBuffer buffer;
     void debug() {
-        printf("BUFFER : '%.*s'\n", buffer.offset, buffer.data);
+        printf("BUFFER : '%.*s'\n", static_cast<int>(buffer.offset), buffer.data);
     }
     void put(char c) {
         buffer.writeByte(c);
@@ -1612,6 +1612,19 @@ public:
     }
 };
 
+class TypeMangler: public Visitor {
+public:
+    Type* const head;
+    TypeMangler(Type* type) : head(type) {
+        head->accept(this);
+    }
+
+    void visit(TypeStruct* type);
+    void visit(TypeClass* type);
+    void visit(TypeEnum* type);
+    void visit(TypeBasic* type);
+};
+
 class DSymbolMangler: public Visitor {
 public:
     void visit(Nspace* symbol) {
@@ -1636,7 +1649,8 @@ public:
             for (RootObject* argument : *arguments) {
                 assert(argument->dyncast() == DYNCAST_TYPE);
                 Type* argumentType = static_cast<Type*>(argument);
-                ScopedAliasedType scopedAliasedType(argumentType);
+                TypeMangler mangler(argumentType);
+                // ScopedAliasedType scopedAliasedType(argumentType);
                 // mangle(scopedAliasedType);
             }
         } else {
@@ -1669,26 +1683,24 @@ public:
     }
 };
 
-class TypeMangler: public Visitor {
-public:
-    Type* const head;
-    TypeMangler(Type* type) : head(type) {
-        head->accept(this);
-    }
+void TypeMangler::visit(TypeStruct* type) {
+    DSymbolMangler mangler;
+    type->sym->accept(&mangler);
+}
 
-    void visit(TypeStruct* type) {
-        DSymbolMangler mangler;
-        type->sym->accept(&mangler);
-    }
-    void visit(TypeClass* type) {
-        DSymbolMangler mangler;
-        type->sym->accept(&mangler);
-    }
-    void visit(TypeEnum* type) {
-        DSymbolMangler mangler;
-        type->sym->accept(&mangler);
-    }
-};
+void TypeMangler::visit(TypeClass* type) {
+    DSymbolMangler mangler;
+    type->sym->accept(&mangler);
+}
+
+void TypeMangler::visit(TypeEnum* type) {
+    DSymbolMangler mangler;
+    type->sym->accept(&mangler);
+}
+
+void TypeMangler::visit(TypeBasic* type) {
+    printf("> TYPE_BASIC(%s)\n", type->toChars());
+}
 
 class CppMangleVisitor3: public Visitor {
 private:

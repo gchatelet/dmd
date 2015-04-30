@@ -27,7 +27,8 @@ extern(C++) {
 //     class Class {}
 //     void f0(Class); static assert(f0.mangleof == "_Z2f05Class");
     // free function templates
-    void t0(T)(); static assert(t0!int.mangleof == "_Z2t0IiEvv");
+    void t0(T)();
+    static assert(t0!int.mangleof == "_Z2t0IiEvv");
     static assert(t0!(TStruct!(TStruct!(TStruct!int))).mangleof == "_Z2t0I7TStructIS0_IS0_IiEEEEvv");
     void t1(T)(T); static assert(t1!int.mangleof == "_Z2t1IiEvT_");
     void t2(A,B,C)(A,ref B,C); static assert(t2!(int,char,uint).mangleof == "_Z2t2IicjEvT_RT0_T1_");
