@@ -5,27 +5,27 @@
 version(linux):
 
 extern(C++) {
-//     // free functions - test parameters
-//     void a0(); static assert(a0.mangleof == "_Z2a0v");
-//     void b0(int); static assert(b0.mangleof == "_Z2b0i");
-//     void b1(int*); static assert(b1.mangleof == "_Z2b1Pi");
-//     void b2(int[3]); static assert(b2.mangleof == "_Z2b2Pi");
-//     void b3(int**); static assert(b3.mangleof == "_Z2b3PPi");
-//     void c0(const int); static assert(c0.mangleof == "_Z2c0i");
-//     void c1(const(int*)); static assert(c1.mangleof == "_Z2c1PKi");
-//     void c2(const(int)*); static assert(c2.mangleof == "_Z2c2PKi");
-//     void d0(ref int); static assert(d0.mangleof == "_Z2d0Ri");
-//     void d1(const ref int); static assert(d1.mangleof == "_Z2d1RKi");
-//     // struct member functions
-//     struct Struct {
-//         void foo(); static assert(foo.mangleof == "_ZN6Struct3fooEv");
-//         void const_foo() const; static assert(const_foo.mangleof == "_ZNK6Struct9const_fooEv");
-//     }
-//     void e0(ref Struct); static assert(e0.mangleof == "_Z2e0R6Struct");
-//     void e1(Struct); static assert(e1.mangleof == "_Z2e16Struct");
-//     // class member functions
-//     class Class {}
-//     void f0(Class); static assert(f0.mangleof == "_Z2f05Class");
+    // free functions - test parameters
+    void a0(); static assert(a0.mangleof == "_Z2a0v");
+    void b0(int); static assert(b0.mangleof == "_Z2b0i");
+    void b1(int*); static assert(b1.mangleof == "_Z2b1Pi");
+    void b2(int[3]); static assert(b2.mangleof == "_Z2b2Pi");
+    void b3(int**); static assert(b3.mangleof == "_Z2b3PPi");
+    void c0(const int); static assert(c0.mangleof == "_Z2c0i");
+    void c1(const(int*)); static assert(c1.mangleof == "_Z2c1PKi");
+    void c2(const(int)*); static assert(c2.mangleof == "_Z2c2PKi");
+    void d0(ref int); static assert(d0.mangleof == "_Z2d0Ri");
+    void d1(const ref int); static assert(d1.mangleof == "_Z2d1RKi");
+    // struct member functions
+    struct Struct {
+        void foo(); static assert(foo.mangleof == "_ZN6Struct3fooEv");
+        void const_foo() const; static assert(const_foo.mangleof == "_ZNK6Struct9const_fooEv");
+    }
+    void e0(ref Struct); static assert(e0.mangleof == "_Z2e0R6Struct");
+    void e1(Struct); static assert(e1.mangleof == "_Z2e16Struct");
+    // class member functions
+    class Class {}
+    void f0(Class); static assert(f0.mangleof == "_Z2f0P5Class");
     // free function templates
     void t0(T)();
     static assert(t0!int.mangleof == "_Z2t0IiEvv");
@@ -79,7 +79,7 @@ extern(C++, nested) {
     // NestedTemplatedStruct!int            S1_
     // templatedMemberFunction!NestedStruct S2_
     // NestedStruct                         S3_
-//     static assert(NestedTemplatedStruct!int.templatedMemberFunction!NestedStruct.mangleof == "_ZNK6nested21NestedTemplatedStructIiE23templatedMemberFunctionINS_12NestedStructEEEPT_PPKS4_");
+    static assert(NestedTemplatedStruct!int.templatedMemberFunction!NestedStruct.mangleof == "_ZNK6nested21NestedTemplatedStructIiE23templatedMemberFunctionINS_12NestedStructEEEPT_PPKS4_");
 }
 
 extern(C++, std) {
@@ -111,11 +111,11 @@ alias basic_ostream!char std_ostream;
 alias basic_iostream!char std_iostream;
 
 static assert(std.vector!int.empty.mangleof);
-static assert(std_istream.get.mangleof =="_ZNSi3getEv");
-static assert(std_ostream.put.mangleof =="_ZNSo3putEc");
-static assert(std_string.empty.mangleof =="_ZNKSs5emptyEv");
-static assert(std_string.find_first_of.mangleof =="_ZNKSs13find_first_ofERKSsm");
-static assert(std.foo14.mangleof =="_ZSt5foo14St6vectorIiSaIiEE");
+static assert(std_istream.get.mangleof == "_ZNSi3getEv");
+static assert(std_ostream.put.mangleof == "_ZNSo3putEc");
+static assert(std_string.empty.mangleof == "_ZNKSs5emptyEv");
+static assert(std_string.find_first_of.mangleof == "_ZNKSs13find_first_ofERKSsm");
+static assert(std.foo14.mangleof == "_ZSt5foo14St6vectorIiSaIiEE");
 
 import core.stdc.stdio;
 
