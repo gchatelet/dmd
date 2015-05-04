@@ -1300,10 +1300,7 @@ public:
         const SubstitutionType type = substitution.type;
         assert(type != SUBSTITUTION_NONE);
         if (type == SUBSTITUTION_TEMPLATE_ARGUMENT || type == SUBSTITUTION_OBJECT) {
-            if (type == SUBSTITUTION_TEMPLATE_ARGUMENT)
-                put('T');
-            else if (type == SUBSTITUTION_OBJECT)
-                put('S');
+            put(type);
             if (substitution.index > 0) {
                 assert(substitution.index <= 9);
                 put('0' + substitution.index - 1);
