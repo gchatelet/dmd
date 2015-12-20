@@ -37,6 +37,415 @@ import ddmd.visitor;
  */
 static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TARGET_SOLARIS)
 {
+  extern (C++) class NullVisitor : Visitor {
+    import ddmd.aggregate;
+    import ddmd.aliasthis;
+    import ddmd.attrib;
+    import ddmd.cond;
+    import ddmd.ctfeexpr;
+    import ddmd.dclass;
+    import ddmd.declaration;
+    import ddmd.denum;
+    import ddmd.dimport;
+    import ddmd.dmodule;
+    import ddmd.dstruct;
+    import ddmd.dsymbol;
+    import ddmd.dtemplate;
+    import ddmd.dversion;
+    import ddmd.expression;
+    import ddmd.func;
+    import ddmd.init;
+    import ddmd.mtype;
+    import ddmd.nspace;
+    import ddmd.statement;
+    import ddmd.staticassert;
+    import std.stdio;
+
+    override void visit(AddAssignExp                       ) { writeln("Unhandled AddAssignExp                       "); assert(false); }
+    override void visit(AddExp                             ) { writeln("Unhandled AddExp                             "); assert(false); }
+    override void visit(AddrExp                            ) { writeln("Unhandled AddrExp                            "); assert(false); }
+    override void visit(AggregateDeclaration               ) { writeln("Unhandled AggregateDeclaration               "); assert(false); }
+    override void visit(AliasDeclaration                   ) { writeln("Unhandled AliasDeclaration                   "); assert(false); }
+    override void visit(AliasThis                          ) { writeln("Unhandled AliasThis                          "); assert(false); }
+    override void visit(AlignDeclaration                   ) { writeln("Unhandled AlignDeclaration                   "); assert(false); }
+    override void visit(AndAndExp                          ) { writeln("Unhandled AndAndExp                          "); assert(false); }
+    override void visit(AndAssignExp                       ) { writeln("Unhandled AndAssignExp                       "); assert(false); }
+    override void visit(AndExp                             ) { writeln("Unhandled AndExp                             "); assert(false); }
+    override void visit(AnonDeclaration                    ) { writeln("Unhandled AnonDeclaration                    "); assert(false); }
+    override void visit(ArrayExp                           ) { writeln("Unhandled ArrayExp                           "); assert(false); }
+    override void visit(ArrayInitializer                   ) { writeln("Unhandled ArrayInitializer                   "); assert(false); }
+    override void visit(ArrayLengthExp                     ) { writeln("Unhandled ArrayLengthExp                     "); assert(false); }
+    override void visit(ArrayLiteralExp                    ) { writeln("Unhandled ArrayLiteralExp                    "); assert(false); }
+    override void visit(ArrayScopeSymbol                   ) { writeln("Unhandled ArrayScopeSymbol                   "); assert(false); }
+    override void visit(AsmStatement                       ) { writeln("Unhandled AsmStatement                       "); assert(false); }
+    override void visit(AssertExp                          ) { writeln("Unhandled AssertExp                          "); assert(false); }
+    override void visit(AssignExp                          ) { writeln("Unhandled AssignExp                          "); assert(false); }
+    override void visit(AssocArrayLiteralExp               ) { writeln("Unhandled AssocArrayLiteralExp               "); assert(false); }
+    override void visit(AttribDeclaration                  ) { writeln("Unhandled AttribDeclaration                  "); assert(false); }
+    override void visit(BinAssignExp                       ) { writeln("Unhandled BinAssignExp                       "); assert(false); }
+    override void visit(BinExp                             ) { writeln("Unhandled BinExp                             "); assert(false); }
+    override void visit(BlitExp                            ) { writeln("Unhandled BlitExp                            "); assert(false); }
+    override void visit(BoolExp                            ) { writeln("Unhandled BoolExp                            "); assert(false); }
+    override void visit(BreakStatement                     ) { writeln("Unhandled BreakStatement                     "); assert(false); }
+    override void visit(CallExp                            ) { writeln("Unhandled CallExp                            "); assert(false); }
+    override void visit(CaseRangeStatement                 ) { writeln("Unhandled CaseRangeStatement                 "); assert(false); }
+    override void visit(CaseStatement                      ) { writeln("Unhandled CaseStatement                      "); assert(false); }
+    override void visit(CastExp                            ) { writeln("Unhandled CastExp                            "); assert(false); }
+    override void visit(CatAssignExp                       ) { writeln("Unhandled CatAssignExp                       "); assert(false); }
+    override void visit(CatExp                             ) { writeln("Unhandled CatExp                             "); assert(false); }
+    override void visit(ClassDeclaration                   ) { writeln("Unhandled ClassDeclaration                   "); assert(false); }
+    override void visit(ClassReferenceExp                  ) { writeln("Unhandled ClassReferenceExp                  "); assert(false); }
+    override void visit(CmpExp                             ) { writeln("Unhandled CmpExp                             "); assert(false); }
+    override void visit(ComExp                             ) { writeln("Unhandled ComExp                             "); assert(false); }
+    override void visit(CommaExp                           ) { writeln("Unhandled CommaExp                           "); assert(false); }
+    override void visit(CompileDeclaration                 ) { writeln("Unhandled CompileDeclaration                 "); assert(false); }
+    override void visit(CompileExp                         ) { writeln("Unhandled CompileExp                         "); assert(false); }
+    override void visit(CompileStatement                   ) { writeln("Unhandled CompileStatement                   "); assert(false); }
+    override void visit(ComplexExp                         ) { writeln("Unhandled ComplexExp                         "); assert(false); }
+    override void visit(CompoundAsmStatement               ) { writeln("Unhandled CompoundAsmStatement               "); assert(false); }
+    override void visit(CompoundDeclarationStatement       ) { writeln("Unhandled CompoundDeclarationStatement       "); assert(false); }
+    override void visit(CompoundStatement                  ) { writeln("Unhandled CompoundStatement                  "); assert(false); }
+    override void visit(CondExp                            ) { writeln("Unhandled CondExp                            "); assert(false); }
+    override void visit(Condition                          ) { writeln("Unhandled Condition                          "); assert(false); }
+    override void visit(ConditionalDeclaration             ) { writeln("Unhandled ConditionalDeclaration             "); assert(false); }
+    override void visit(ConditionalStatement               ) { writeln("Unhandled ConditionalStatement               "); assert(false); }
+    override void visit(ConstructExp                       ) { writeln("Unhandled ConstructExp                       "); assert(false); }
+    override void visit(ContinueStatement                  ) { writeln("Unhandled ContinueStatement                  "); assert(false); }
+    override void visit(CtorDeclaration                    ) { writeln("Unhandled CtorDeclaration                    "); assert(false); }
+    override void visit(DebugCondition                     ) { writeln("Unhandled DebugCondition                     "); assert(false); }
+    override void visit(DebugStatement                     ) { writeln("Unhandled DebugStatement                     "); assert(false); }
+    override void visit(DebugSymbol                        ) { writeln("Unhandled DebugSymbol                        "); assert(false); }
+    override void visit(Declaration                        ) { writeln("Unhandled Declaration                        "); assert(false); }
+    override void visit(DeclarationExp                     ) { writeln("Unhandled DeclarationExp                     "); assert(false); }
+    override void visit(DefaultInitExp                     ) { writeln("Unhandled DefaultInitExp                     "); assert(false); }
+    override void visit(DefaultStatement                   ) { writeln("Unhandled DefaultStatement                   "); assert(false); }
+    override void visit(DelegateExp                        ) { writeln("Unhandled DelegateExp                        "); assert(false); }
+    override void visit(DelegateFuncptrExp                 ) { writeln("Unhandled DelegateFuncptrExp                 "); assert(false); }
+    override void visit(DelegatePtrExp                     ) { writeln("Unhandled DelegatePtrExp                     "); assert(false); }
+    override void visit(DeleteDeclaration                  ) { writeln("Unhandled DeleteDeclaration                  "); assert(false); }
+    override void visit(DeleteExp                          ) { writeln("Unhandled DeleteExp                          "); assert(false); }
+    override void visit(DeprecatedDeclaration              ) { writeln("Unhandled DeprecatedDeclaration              "); assert(false); }
+    override void visit(DivAssignExp                       ) { writeln("Unhandled DivAssignExp                       "); assert(false); }
+    override void visit(DivExp                             ) { writeln("Unhandled DivExp                             "); assert(false); }
+    override void visit(DollarExp                          ) { writeln("Unhandled DollarExp                          "); assert(false); }
+    override void visit(DoStatement                        ) { writeln("Unhandled DoStatement                        "); assert(false); }
+    override void visit(DotExp                             ) { writeln("Unhandled DotExp                             "); assert(false); }
+    override void visit(DotIdExp                           ) { writeln("Unhandled DotIdExp                           "); assert(false); }
+    override void visit(DotTemplateExp                     ) { writeln("Unhandled DotTemplateExp                     "); assert(false); }
+    override void visit(DotTemplateInstanceExp             ) { writeln("Unhandled DotTemplateInstanceExp             "); assert(false); }
+    override void visit(DotTypeExp                         ) { writeln("Unhandled DotTypeExp                         "); assert(false); }
+    override void visit(DotVarExp                          ) { writeln("Unhandled DotVarExp                          "); assert(false); }
+    override void visit(Dsymbol                            ) { writeln("Unhandled Dsymbol                            "); assert(false); }
+    override void visit(DsymbolExp                         ) { writeln("Unhandled DsymbolExp                         "); assert(false); }
+    override void visit(DtorDeclaration                    ) { writeln("Unhandled DtorDeclaration                    "); assert(false); }
+    override void visit(DtorExpStatement                   ) { writeln("Unhandled DtorExpStatement                   "); assert(false); }
+    override void visit(DVCondition                        ) { writeln("Unhandled DVCondition                        "); assert(false); }
+    override void visit(EnumDeclaration                    ) { writeln("Unhandled EnumDeclaration                    "); assert(false); }
+    override void visit(EnumMember                         ) { writeln("Unhandled EnumMember                         "); assert(false); }
+    override void visit(EqualExp                           ) { writeln("Unhandled EqualExp                           "); assert(false); }
+    override void visit(ErrorExp                           ) { writeln("Unhandled ErrorExp                           "); assert(false); }
+    override void visit(ErrorInitializer                   ) { writeln("Unhandled ErrorInitializer                   "); assert(false); }
+    override void visit(ErrorStatement                     ) { writeln("Unhandled ErrorStatement                     "); assert(false); }
+    override void visit(ExpInitializer                     ) { writeln("Unhandled ExpInitializer                     "); assert(false); }
+    override void visit(Expression                         ) { writeln("Unhandled Expression                         "); assert(false); }
+    override void visit(ExpStatement                       ) { writeln("Unhandled ExpStatement                       "); assert(false); }
+    override void visit(FileInitExp                        ) { writeln("Unhandled FileInitExp                        "); assert(false); }
+    override void visit(ForeachRangeStatement              ) { writeln("Unhandled ForeachRangeStatement              "); assert(false); }
+    override void visit(ForeachStatement                   ) { writeln("Unhandled ForeachStatement                   "); assert(false); }
+    override void visit(ForStatement                       ) { writeln("Unhandled ForStatement                       "); assert(false); }
+    override void visit(FuncAliasDeclaration               ) { writeln("Unhandled FuncAliasDeclaration               "); assert(false); }
+    override void visit(FuncDeclaration                    ) { writeln("Unhandled FuncDeclaration                    "); assert(false); }
+    override void visit(FuncExp                            ) { writeln("Unhandled FuncExp                            "); assert(false); }
+    override void visit(FuncInitExp                        ) { writeln("Unhandled FuncInitExp                        "); assert(false); }
+    override void visit(FuncLiteralDeclaration             ) { writeln("Unhandled FuncLiteralDeclaration             "); assert(false); }
+    override void visit(GotoCaseStatement                  ) { writeln("Unhandled GotoCaseStatement                  "); assert(false); }
+    override void visit(GotoDefaultStatement               ) { writeln("Unhandled GotoDefaultStatement               "); assert(false); }
+    override void visit(GotoStatement                      ) { writeln("Unhandled GotoStatement                      "); assert(false); }
+    override void visit(HaltExp                            ) { writeln("Unhandled HaltExp                            "); assert(false); }
+    override void visit(IdentifierExp                      ) { writeln("Unhandled IdentifierExp                      "); assert(false); }
+    override void visit(IdentityExp                        ) { writeln("Unhandled IdentityExp                        "); assert(false); }
+    override void visit(IfStatement                        ) { writeln("Unhandled IfStatement                        "); assert(false); }
+    override void visit(Import                             ) { writeln("Unhandled Import                             "); assert(false); }
+    override void visit(ImportExp                          ) { writeln("Unhandled ImportExp                          "); assert(false); }
+    override void visit(ImportStatement                    ) { writeln("Unhandled ImportStatement                    "); assert(false); }
+    override void visit(IndexExp                           ) { writeln("Unhandled IndexExp                           "); assert(false); }
+    override void visit(InExp                              ) { writeln("Unhandled InExp                              "); assert(false); }
+    override void visit(Initializer                        ) { writeln("Unhandled Initializer                        "); assert(false); }
+    override void visit(IntegerExp                         ) { writeln("Unhandled IntegerExp                         "); assert(false); }
+    override void visit(InterfaceDeclaration               ) { writeln("Unhandled InterfaceDeclaration               "); assert(false); }
+    override void visit(IntervalExp                        ) { writeln("Unhandled IntervalExp                        "); assert(false); }
+    override void visit(InvariantDeclaration               ) { writeln("Unhandled InvariantDeclaration               "); assert(false); }
+    override void visit(IsExp                              ) { writeln("Unhandled IsExp                              "); assert(false); }
+    override void visit(LabelDsymbol                       ) { writeln("Unhandled LabelDsymbol                       "); assert(false); }
+    override void visit(LabelStatement                     ) { writeln("Unhandled LabelStatement                     "); assert(false); }
+    override void visit(LineInitExp                        ) { writeln("Unhandled LineInitExp                        "); assert(false); }
+    override void visit(LinkDeclaration                    ) { writeln("Unhandled LinkDeclaration                    "); assert(false); }
+    override void visit(MinAssignExp                       ) { writeln("Unhandled MinAssignExp                       "); assert(false); }
+    override void visit(MinExp                             ) { writeln("Unhandled MinExp                             "); assert(false); }
+    override void visit(ModAssignExp                       ) { writeln("Unhandled ModAssignExp                       "); assert(false); }
+    override void visit(ModExp                             ) { writeln("Unhandled ModExp                             "); assert(false); }
+    override void visit(Module                             ) { writeln("Unhandled Module                             "); assert(false); }
+    override void visit(ModuleInitExp                      ) { writeln("Unhandled ModuleInitExp                      "); assert(false); }
+    override void visit(MulAssignExp                       ) { writeln("Unhandled MulAssignExp                       "); assert(false); }
+    override void visit(MulExp                             ) { writeln("Unhandled MulExp                             "); assert(false); }
+    override void visit(NegExp                             ) { writeln("Unhandled NegExp                             "); assert(false); }
+    override void visit(NewAnonClassExp                    ) { writeln("Unhandled NewAnonClassExp                    "); assert(false); }
+    override void visit(NewDeclaration                     ) { writeln("Unhandled NewDeclaration                     "); assert(false); }
+    override void visit(NewExp                             ) { writeln("Unhandled NewExp                             "); assert(false); }
+    override void visit(NotExp                             ) { writeln("Unhandled NotExp                             "); assert(false); }
+    override void visit(Nspace                             ) { writeln("Unhandled Nspace                             "); assert(false); }
+    override void visit(NullExp                            ) { writeln("Unhandled NullExp                            "); assert(false); }
+    override void visit(OnScopeStatement                   ) { writeln("Unhandled OnScopeStatement                   "); assert(false); }
+    override void visit(OrAssignExp                        ) { writeln("Unhandled OrAssignExp                        "); assert(false); }
+    override void visit(OrExp                              ) { writeln("Unhandled OrExp                              "); assert(false); }
+    override void visit(OrOrExp                            ) { writeln("Unhandled OrOrExp                            "); assert(false); }
+    override void visit(OverDeclaration                    ) { writeln("Unhandled OverDeclaration                    "); assert(false); }
+    override void visit(OverExp                            ) { writeln("Unhandled OverExp                            "); assert(false); }
+    override void visit(OverloadSet                        ) { writeln("Unhandled OverloadSet                        "); assert(false); }
+    override void visit(Package                            ) { writeln("Unhandled Package                            "); assert(false); }
+    override void visit(Parameter                          ) { writeln("Unhandled Parameter                          "); assert(false); }
+    override void visit(PeelStatement                      ) { writeln("Unhandled PeelStatement                      "); assert(false); }
+    override void visit(PostBlitDeclaration                ) { writeln("Unhandled PostBlitDeclaration                "); assert(false); }
+    override void visit(PostExp                            ) { writeln("Unhandled PostExp                            "); assert(false); }
+    override void visit(PowAssignExp                       ) { writeln("Unhandled PowAssignExp                       "); assert(false); }
+    override void visit(PowExp                             ) { writeln("Unhandled PowExp                             "); assert(false); }
+    override void visit(PragmaDeclaration                  ) { writeln("Unhandled PragmaDeclaration                  "); assert(false); }
+    override void visit(PragmaStatement                    ) { writeln("Unhandled PragmaStatement                    "); assert(false); }
+    override void visit(PreExp                             ) { writeln("Unhandled PreExp                             "); assert(false); }
+    override void visit(PrettyFuncInitExp                  ) { writeln("Unhandled PrettyFuncInitExp                  "); assert(false); }
+    override void visit(ProtDeclaration                    ) { writeln("Unhandled ProtDeclaration                    "); assert(false); }
+    override void visit(PtrExp                             ) { writeln("Unhandled PtrExp                             "); assert(false); }
+    override void visit(RealExp                            ) { writeln("Unhandled RealExp                            "); assert(false); }
+    override void visit(RemoveExp                          ) { writeln("Unhandled RemoveExp                          "); assert(false); }
+    override void visit(ReturnStatement                    ) { writeln("Unhandled ReturnStatement                    "); assert(false); }
+    override void visit(ScopeDsymbol                       ) { writeln("Unhandled ScopeDsymbol                       "); assert(false); }
+    override void visit(ScopeExp                           ) { writeln("Unhandled ScopeExp                           "); assert(false); }
+    override void visit(ScopeStatement                     ) { writeln("Unhandled ScopeStatement                     "); assert(false); }
+    override void visit(SharedStaticCtorDeclaration        ) { writeln("Unhandled SharedStaticCtorDeclaration        "); assert(false); }
+    override void visit(SharedStaticDtorDeclaration        ) { writeln("Unhandled SharedStaticDtorDeclaration        "); assert(false); }
+    override void visit(ShlAssignExp                       ) { writeln("Unhandled ShlAssignExp                       "); assert(false); }
+    override void visit(ShlExp                             ) { writeln("Unhandled ShlExp                             "); assert(false); }
+    override void visit(ShrAssignExp                       ) { writeln("Unhandled ShrAssignExp                       "); assert(false); }
+    override void visit(ShrExp                             ) { writeln("Unhandled ShrExp                             "); assert(false); }
+    override void visit(SliceExp                           ) { writeln("Unhandled SliceExp                           "); assert(false); }
+    override void visit(Statement                          ) { writeln("Unhandled Statement                          "); assert(false); }
+    override void visit(StaticAssert                       ) { writeln("Unhandled StaticAssert                       "); assert(false); }
+    override void visit(StaticAssertStatement              ) { writeln("Unhandled StaticAssertStatement              "); assert(false); }
+    override void visit(StaticCtorDeclaration              ) { writeln("Unhandled StaticCtorDeclaration              "); assert(false); }
+    override void visit(StaticDtorDeclaration              ) { writeln("Unhandled StaticDtorDeclaration              "); assert(false); }
+    override void visit(StaticIfCondition                  ) { writeln("Unhandled StaticIfCondition                  "); assert(false); }
+    override void visit(StaticIfDeclaration                ) { writeln("Unhandled StaticIfDeclaration                "); assert(false); }
+    override void visit(StorageClassDeclaration            ) { writeln("Unhandled StorageClassDeclaration            "); assert(false); }
+    override void visit(StringExp                          ) { writeln("Unhandled StringExp                          "); assert(false); }
+    override void visit(StructDeclaration                  ) { writeln("Unhandled StructDeclaration                  "); assert(false); }
+    override void visit(StructInitializer                  ) { writeln("Unhandled StructInitializer                  "); assert(false); }
+    override void visit(StructLiteralExp                   ) { writeln("Unhandled StructLiteralExp                   "); assert(false); }
+    override void visit(SuperExp                           ) { writeln("Unhandled SuperExp                           "); assert(false); }
+    override void visit(SwitchErrorStatement               ) { writeln("Unhandled SwitchErrorStatement               "); assert(false); }
+    override void visit(SwitchStatement                    ) { writeln("Unhandled SwitchStatement                    "); assert(false); }
+    override void visit(SymbolDeclaration                  ) { writeln("Unhandled SymbolDeclaration                  "); assert(false); }
+    override void visit(SymbolExp                          ) { writeln("Unhandled SymbolExp                          "); assert(false); }
+    override void visit(SymOffExp                          ) { writeln("Unhandled SymOffExp                          "); assert(false); }
+    override void visit(SynchronizedStatement              ) { writeln("Unhandled SynchronizedStatement              "); assert(false); }
+    override void visit(TemplateAliasParameter             ) { writeln("Unhandled TemplateAliasParameter             "); assert(false); }
+    override void visit(TemplateDeclaration                ) { writeln("Unhandled TemplateDeclaration                "); assert(false); }
+    override void visit(TemplateExp                        ) { writeln("Unhandled TemplateExp                        "); assert(false); }
+    override void visit(TemplateInstance                   ) { writeln("Unhandled TemplateInstance                   "); assert(false); }
+    override void visit(TemplateMixin                      ) { writeln("Unhandled TemplateMixin                      "); assert(false); }
+    override void visit(TemplateParameter                  ) { writeln("Unhandled TemplateParameter                  "); assert(false); }
+    override void visit(TemplateThisParameter              ) { writeln("Unhandled TemplateThisParameter              "); assert(false); }
+    override void visit(TemplateTupleParameter             ) { writeln("Unhandled TemplateTupleParameter             "); assert(false); }
+    override void visit(TemplateTypeParameter              ) { writeln("Unhandled TemplateTypeParameter              "); assert(false); }
+    override void visit(TemplateValueParameter             ) { writeln("Unhandled TemplateValueParameter             "); assert(false); }
+    override void visit(ThisDeclaration                    ) { writeln("Unhandled ThisDeclaration                    "); assert(false); }
+    override void visit(ThisExp                            ) { writeln("Unhandled ThisExp                            "); assert(false); }
+    override void visit(ThrownExceptionExp                 ) { writeln("Unhandled ThrownExceptionExp                 "); assert(false); }
+    override void visit(ThrowStatement                     ) { writeln("Unhandled ThrowStatement                     "); assert(false); }
+    override void visit(TraitsExp                          ) { writeln("Unhandled TraitsExp                          "); assert(false); }
+    override void visit(TryCatchStatement                  ) { writeln("Unhandled TryCatchStatement                  "); assert(false); }
+    override void visit(TryFinallyStatement                ) { writeln("Unhandled TryFinallyStatement                "); assert(false); }
+    override void visit(TupleDeclaration                   ) { writeln("Unhandled TupleDeclaration                   "); assert(false); }
+    override void visit(TupleExp                           ) { writeln("Unhandled TupleExp                           "); assert(false); }
+    override void visit(Type                               ) { writeln("Unhandled Type                               "); assert(false); }
+    override void visit(TypeAArray                         ) { writeln("Unhandled TypeAArray                         "); assert(false); }
+    override void visit(TypeArray                          ) { writeln("Unhandled TypeArray                          "); assert(false); }
+    override void visit(TypeBasic                          ) { writeln("Unhandled TypeBasic                          "); assert(false); }
+    override void visit(TypeClass                          ) { writeln("Unhandled TypeClass                          "); assert(false); }
+    override void visit(TypeDArray                         ) { writeln("Unhandled TypeDArray                         "); assert(false); }
+    override void visit(TypeDelegate                       ) { writeln("Unhandled TypeDelegate                       "); assert(false); }
+    override void visit(TypeEnum                           ) { writeln("Unhandled TypeEnum                           "); assert(false); }
+    override void visit(TypeError                          ) { writeln("Unhandled TypeError                          "); assert(false); }
+    override void visit(TypeExp                            ) { writeln("Unhandled TypeExp                            "); assert(false); }
+    override void visit(TypeFunction                       ) { writeln("Unhandled TypeFunction                       "); assert(false); }
+    override void visit(TypeIdentifier                     ) { writeln("Unhandled TypeIdentifier                     "); assert(false); }
+    override void visit(TypeidExp                          ) { writeln("Unhandled TypeidExp                          "); assert(false); }
+    override void visit(TypeInfoArrayDeclaration           ) { writeln("Unhandled TypeInfoArrayDeclaration           "); assert(false); }
+    override void visit(TypeInfoAssociativeArrayDeclaration) { writeln("Unhandled TypeInfoAssociativeArrayDeclaration"); assert(false); }
+    override void visit(TypeInfoClassDeclaration           ) { writeln("Unhandled TypeInfoClassDeclaration           "); assert(false); }
+    override void visit(TypeInfoConstDeclaration           ) { writeln("Unhandled TypeInfoConstDeclaration           "); assert(false); }
+    override void visit(TypeInfoDeclaration                ) { writeln("Unhandled TypeInfoDeclaration                "); assert(false); }
+    override void visit(TypeInfoDelegateDeclaration        ) { writeln("Unhandled TypeInfoDelegateDeclaration        "); assert(false); }
+    override void visit(TypeInfoEnumDeclaration            ) { writeln("Unhandled TypeInfoEnumDeclaration            "); assert(false); }
+    override void visit(TypeInfoFunctionDeclaration        ) { writeln("Unhandled TypeInfoFunctionDeclaration        "); assert(false); }
+    override void visit(TypeInfoInterfaceDeclaration       ) { writeln("Unhandled TypeInfoInterfaceDeclaration       "); assert(false); }
+    override void visit(TypeInfoInvariantDeclaration       ) { writeln("Unhandled TypeInfoInvariantDeclaration       "); assert(false); }
+    override void visit(TypeInfoPointerDeclaration         ) { writeln("Unhandled TypeInfoPointerDeclaration         "); assert(false); }
+    override void visit(TypeInfoSharedDeclaration          ) { writeln("Unhandled TypeInfoSharedDeclaration          "); assert(false); }
+    override void visit(TypeInfoStaticArrayDeclaration     ) { writeln("Unhandled TypeInfoStaticArrayDeclaration     "); assert(false); }
+    override void visit(TypeInfoStructDeclaration          ) { writeln("Unhandled TypeInfoStructDeclaration          "); assert(false); }
+    override void visit(TypeInfoTupleDeclaration           ) { writeln("Unhandled TypeInfoTupleDeclaration           "); assert(false); }
+    override void visit(TypeInfoVectorDeclaration          ) { writeln("Unhandled TypeInfoVectorDeclaration          "); assert(false); }
+    override void visit(TypeInfoWildDeclaration            ) { writeln("Unhandled TypeInfoWildDeclaration            "); assert(false); }
+    override void visit(TypeInstance                       ) { writeln("Unhandled TypeInstance                       "); assert(false); }
+    override void visit(TypeNext                           ) { writeln("Unhandled TypeNext                           "); assert(false); }
+    override void visit(TypeNull                           ) { writeln("Unhandled TypeNull                           "); assert(false); }
+    override void visit(TypePointer                        ) { writeln("Unhandled TypePointer                        "); assert(false); }
+    override void visit(TypeQualified                      ) { writeln("Unhandled TypeQualified                      "); assert(false); }
+    override void visit(TypeReference                      ) { writeln("Unhandled TypeReference                      "); assert(false); }
+    override void visit(TypeReturn                         ) { writeln("Unhandled TypeReturn                         "); assert(false); }
+    override void visit(TypeSArray                         ) { writeln("Unhandled TypeSArray                         "); assert(false); }
+    override void visit(TypeSlice                          ) { writeln("Unhandled TypeSlice                          "); assert(false); }
+    override void visit(TypeStruct                         ) { writeln("Unhandled TypeStruct                         "); assert(false); }
+    override void visit(TypeTuple                          ) { writeln("Unhandled TypeTuple                          "); assert(false); }
+    override void visit(TypeTypeof                         ) { writeln("Unhandled TypeTypeof                         "); assert(false); }
+    override void visit(TypeVector                         ) { writeln("Unhandled TypeVector                         "); assert(false); }
+    override void visit(UAddExp                            ) { writeln("Unhandled UAddExp                            "); assert(false); }
+    override void visit(UnaExp                             ) { writeln("Unhandled UnaExp                             "); assert(false); }
+    override void visit(UnionDeclaration                   ) { writeln("Unhandled UnionDeclaration                   "); assert(false); }
+    override void visit(UnitTestDeclaration                ) { writeln("Unhandled UnitTestDeclaration                "); assert(false); }
+    override void visit(UnrolledLoopStatement              ) { writeln("Unhandled UnrolledLoopStatement              "); assert(false); }
+    override void visit(UserAttributeDeclaration           ) { writeln("Unhandled UserAttributeDeclaration           "); assert(false); }
+    override void visit(UshrAssignExp                      ) { writeln("Unhandled UshrAssignExp                      "); assert(false); }
+    override void visit(UshrExp                            ) { writeln("Unhandled UshrExp                            "); assert(false); }
+    override void visit(VarDeclaration                     ) { writeln("Unhandled VarDeclaration                     "); assert(false); }
+    override void visit(VarExp                             ) { writeln("Unhandled VarExp                             "); assert(false); }
+    override void visit(VectorExp                          ) { writeln("Unhandled VectorExp                          "); assert(false); }
+    override void visit(VersionCondition                   ) { writeln("Unhandled VersionCondition                   "); assert(false); }
+    override void visit(VersionSymbol                      ) { writeln("Unhandled VersionSymbol                      "); assert(false); }
+    override void visit(VoidInitExp                        ) { writeln("Unhandled VoidInitExp                        "); assert(false); }
+    override void visit(VoidInitializer                    ) { writeln("Unhandled VoidInitializer                    "); assert(false); }
+    override void visit(WhileStatement                     ) { writeln("Unhandled WhileStatement                     "); assert(false); }
+    override void visit(WithScopeSymbol                    ) { writeln("Unhandled WithScopeSymbol                    "); assert(false); }
+    override void visit(WithStatement                      ) { writeln("Unhandled WithStatement                      "); assert(false); }
+    override void visit(XorAssignExp                       ) { writeln("Unhandled XorAssignExp                       "); assert(false); }
+    override void visit(XorExp                             ) { writeln("Unhandled XorExp                             "); assert(false); }
+  }
+
+  extern (C++) final class TypeVisitor : NullVisitor
+  {
+      import std.stdio;
+      alias visit = super.visit;
+      @property string str(T)(T value) {
+        import std.conv : to;
+        return value.toChars().to!string;
+      }
+
+      override void visit(TypeFunction type) {
+        write("Function: ");
+        assert(type.next);
+        type.next.accept(this);
+      }
+
+      override void visit(TypeBasic type) {
+        write("basic(", str(type), ")");
+      }
+
+      override void visit(TypePointer type) {
+        write("*");
+        assert(type.next);
+        type.next.accept(this);
+      }
+
+      override void visit(TypeReference type) {
+        write("&");
+        assert(type.next);
+        type.next.accept(this);
+      }
+
+      override void visit(TypeStruct type) {
+        write("struct(", str(type.sym), ")");
+      }
+
+      override void visit(TypeClass type) {
+        write("class(", str(type.sym), ")");
+      }
+  }
+
+  struct Variable {
+    VarDeclaration declaration;
+    Type type;
+    Dsymbol[] parents;
+  }
+
+  struct Function {
+    FuncDeclaration declaration;
+    Identifier identifier;
+    TypeFunction type;
+    Type returnType;
+    Parameter[] parameters;
+    Dsymbol[] parents;
+
+    this(FuncDeclaration decl)
+    {
+      declaration = decl;
+      identifier = decl.ident;
+      type = cast(TypeFunction)declaration.type;
+      returnType = type.next;
+      assert(type.parameters);
+      parameters = (*type.parameters)[];
+      for(Dsymbol current = declaration;
+          current && !current.isModule;
+          current = current.parent) {
+        parents ~= current;
+      }
+    }
+
+    void toString(scope void delegate(const(char)[]) sink)
+    {
+      import std.conv : to;
+      @property string str(T)(T value) {
+        return value.toChars().to!string;
+      }
+      sink(str(returnType));
+      sink(" ");
+      sink(str(identifier));
+      sink("(");
+      foreach(i, param; parameters) {
+        if(i) sink(", ");
+        sink(i.to!string);
+      }
+      sink(")");
+      sink(" parents: ");
+      foreach(i, parent; parents) {
+        if(i) sink(", ");
+        sink(str(parent));
+      }
+
+    }
+  }
+
+  extern (C++) final class AstVisitor : NullVisitor
+  {
+      import std.stdio;
+      alias visit = super.visit;
+      @property string str(T)(T value) {
+        import std.conv : to;
+        return value.toChars().to!string;
+      }
+
+      override void visit(FuncDeclaration declaration) {
+        assert(declaration.linkage == LINKcpp);
+        // writeln(str(declaration.ident), " ", str(declaration.type));
+        auto foo = Function(declaration);
+        writeln(foo);
+      }
+
+      override void visit(VarDeclaration declaration) {
+        assert(declaration.linkage == LINKcpp);
+        writeln(str(declaration.ident), " ", str(declaration.type));
+      }
+  }
+
     /*
      * Follows Itanium C++ ABI 1.86
      */
@@ -895,6 +1304,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     extern (C++) char* toCppMangle(Dsymbol s)
     {
         //printf("toCppMangle(%s)\n", s->toChars());
+        scope astVisitor = new AstVisitor();
+        s.accept(astVisitor);
         scope CppMangleVisitor v = new CppMangleVisitor();
         return v.mangleOf(s);
     }
