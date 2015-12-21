@@ -371,10 +371,50 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       }
   }
 
+  private Dsymbol[] getParents(Dsymbol symbol) {
+    Dsymbol[] parents;
+    for(Dsymbol current = symbol.parent;
+        current && !current.isModule;
+        current = current.parent) {
+      parents ~= current;
+    }
+    return parents;
+  }
+
   struct Variable {
     VarDeclaration declaration;
+    Identifier identifier;
     Type type;
     Dsymbol[] parents;
+    TemplateInstance templateInstance;
+
+    this(VarDeclaration decl)
+    {
+      declaration = decl;
+      identifier = decl.ident;
+      type = declaration.type;
+      parents = getParents(declaration);
+      templateInstance = parents.length > 0 ? parents[0].isTemplateInstance : null;
+    }
+
+    void toString(scope void delegate(const(char)[]) sink)
+    {
+      import std.conv : to;
+      @property string str(T)(T value) {
+        return value.toChars().to!string;
+      }
+      sink("Variable: ");
+      sink(str(type));
+      sink(" ");
+      sink(str(identifier));
+      if(templateInstance) sink(" !!");
+      sink(" parents: ");
+      foreach(i, parent; parents) {
+        if(i) sink(", ");
+        sink(str(parent));
+      }
+    }
+
   }
 
   struct Function {
@@ -384,6 +424,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     Type returnType;
     Parameter[] parameters;
     Dsymbol[] parents;
+    TemplateInstance templateInstance;
 
     this(FuncDeclaration decl)
     {
@@ -393,11 +434,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       returnType = type.next;
       assert(type.parameters);
       parameters = (*type.parameters)[];
-      for(Dsymbol current = declaration;
-          current && !current.isModule;
-          current = current.parent) {
-        parents ~= current;
-      }
+      parents = getParents(declaration);
+      templateInstance = parents.length > 0 ? parents[0].isTemplateInstance : null;
     }
 
     void toString(scope void delegate(const(char)[]) sink)
@@ -406,6 +444,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       @property string str(T)(T value) {
         return value.toChars().to!string;
       }
+      sink("Function: ");
       sink(str(returnType));
       sink(" ");
       sink(str(identifier));
@@ -415,12 +454,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         sink(i.to!string);
       }
       sink(")");
+      if(templateInstance) sink(" !!");
       sink(" parents: ");
       foreach(i, parent; parents) {
         if(i) sink(", ");
         sink(str(parent));
       }
-
     }
   }
 
@@ -435,14 +474,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
       override void visit(FuncDeclaration declaration) {
         assert(declaration.linkage == LINKcpp);
-        // writeln(str(declaration.ident), " ", str(declaration.type));
-        auto foo = Function(declaration);
-        writeln(foo);
+        writeln(Function(declaration));
       }
 
       override void visit(VarDeclaration declaration) {
         assert(declaration.linkage == LINKcpp);
-        writeln(str(declaration.ident), " ", str(declaration.type));
+        writeln(Variable(declaration));
       }
   }
 
