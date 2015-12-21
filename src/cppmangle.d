@@ -381,12 +381,17 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     return parents;
   }
 
+  private TemplateInstance getTemplateInstance(Dsymbol[] parents) {
+    return parents.length > 0 ? parents[0].isTemplateInstance : null;
+  }
+
   struct Variable {
     VarDeclaration declaration;
     Identifier identifier;
     Type type;
     Dsymbol[] parents;
-    TemplateInstance templateInstance;
+    bool isPrefixed;
+    bool isNested;
 
     this(VarDeclaration decl)
     {
@@ -394,7 +399,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       identifier = decl.ident;
       type = declaration.type;
       parents = getParents(declaration);
-      templateInstance = parents.length > 0 ? parents[0].isTemplateInstance : null;
+      isPrefixed = parents.length > 0 || type.isConst;
+      isNested = false;
     }
 
     void toString(scope void delegate(const(char)[]) sink)
@@ -407,14 +413,24 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       sink(str(type));
       sink(" ");
       sink(str(identifier));
-      if(templateInstance) sink(" !!");
-      sink(" parents: ");
+      sink(", parents: [");
       foreach(i, parent; parents) {
         if(i) sink(", ");
         sink(str(parent));
       }
+      sink("]");
+      sink(", prefixed: ");
+      sink(isPrefixed ? "yes" : "no");
+      sink(", nested: ");
+      sink(isNested ? "yes" : "no");
+      sink("\n >> ");
+      scope auto foo = (const(char)[] a) {
+        sink(" ");
+        sink(a);
+      };
+      output(foo, this);
+      sink("\n");
     }
-
   }
 
   struct Function {
@@ -425,6 +441,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     Parameter[] parameters;
     Dsymbol[] parents;
     TemplateInstance templateInstance;
+    bool isPrefixed = true; // couldn't find an unprefixed function yet.
+    bool isNested;
 
     this(FuncDeclaration decl)
     {
@@ -435,7 +453,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       assert(type.parameters);
       parameters = (*type.parameters)[];
       parents = getParents(declaration);
-      templateInstance = parents.length > 0 ? parents[0].isTemplateInstance : null;
+      templateInstance = getTemplateInstance(parents);
+      isNested = parents.length >= (templateInstance ? 2 : 1);
     }
 
     void toString(scope void delegate(const(char)[]) sink)
@@ -455,12 +474,63 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       }
       sink(")");
       if(templateInstance) sink(" !!");
-      sink(" parents: ");
+      sink(", parents: [");
       foreach(i, parent; parents) {
         if(i) sink(", ");
         sink(str(parent));
       }
+      sink("]");
+      sink(", prefixed: ");
+      sink(isPrefixed ? "yes" : "no");
+      sink(", nested: ");
+      sink(isNested ? "yes" : "no");
+      sink("\n >> ");
+      scope auto foo = (const(char)[] a) {
+        sink(" ");
+        sink(a);
+      };
+      output(foo, this);
+      sink("\n");
     }
+  }
+
+  void output(T)(scope void delegate(const(char)[]) sink, in T value)
+  if(is(T == Variable) || is(T == Function)) {
+    if(value.isPrefixed) sink("_Z");
+    outputDeclaration(sink, value);
+  }
+
+  void outputDeclaration(T)(scope void delegate(const(char)[]) sink, in T value)
+  if(is(T == Variable) || is(T == Function)) {
+    if(value.isNested) sink("N");
+    foreach_reverse(p; value.parents) {
+      if(p.ident is null) continue;
+      encodeName(sink, p);
+    }
+    encodeName(sink, value.declaration);
+    static if(is(T == Function)) {
+      if(value.templateInstance) {
+        encodeTemplateArgs(sink, value.templateInstance);
+      }
+    }
+    if(value.isNested) sink("E");
+    static if(is(T == Function)) {
+      if(value.templateInstance) {
+        sink("_RET_TYPE_");
+      }
+    }
+  }
+
+  void encodeTemplateArgs(scope void delegate(const(char)[]) sink, in TemplateInstance templateInstance) {
+    sink("I");
+    sink("E");
+  }
+
+  void encodeName(scope void delegate(const(char)[]) sink, in Dsymbol symbol) {
+    auto name = symbol.ident.string;
+    import std.conv : to; // TODO: remove use of standard library
+    sink(to!string(strlen(name)));
+    sink(to!string(name));
   }
 
   extern (C++) final class AstVisitor : NullVisitor
