@@ -371,78 +371,154 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       }
   }
 
-  private Dsymbol[] getParents(Dsymbol symbol) {
-    Dsymbol[] parents;
-    for(Dsymbol current = symbol.parent;
-        current && !current.isModule;
-        current = current.parent) {
-      parents ~= current;
+  import std.conv : to;
+  @property string str(T)(T value) {
+    return value.toChars().to!string;
+  }
+
+  enum Abbreviation : string {
+    None = "None",
+    St = "St", // ::std::
+    Sa = "Sa", // ::std::allocator
+    Sb = "Sb", // ::std::basic_string
+    Ss = "Ss", // ::std::basic_string<char, ::std::char_traits<char>, ::std::allocator<char> >
+    Si = "Si", // ::std::basic_istream<char, ::std::char_traits<char> >
+    So = "So", // ::std::basic_ostream<char, ::std::char_traits<char> >
+    Sd = "Sd", // ::std::basic_iostream<char, ::std::char_traits<char> >
+  }
+
+  Abbreviation getAbbreviation(in Dsymbol sym) {
+    return Abbreviation.None;
+  }
+
+  struct Substitution {
+    int index = -1;
+
+    bool opCast(T)() const if(is(T==bool)) {
+      return index >= 0;
     }
-    return parents;
+
+    void mangleTo(scope void delegate(const(char)[]) sink) const {
+      assert(index >= 0);
+      sink("S");
+      if(index > 0) sink(to!string(index-1));
+      sink("_");
+    }
   }
 
-  private TemplateInstance getTemplateInstance(Dsymbol[] parents) {
-    return parents.length > 0 ? parents[0].isTemplateInstance : null;
+  struct CScopeSymbol {
+      Dsymbol sym;
+      Abbreviation abbreviation;
+      Substitution substitution;
+
+      bool update(Substitutions substitutions) {
+        abbreviation = getAbbreviation(sym);
+        if(abbreviation != Abbreviation.None) return true;
+        substitution = substitutions.get(sym);
+        if(substitution) return true;
+        return false;
+      }
+
+      void mangleTo(scope void delegate(const(char)[]) sink) const {
+        if(sym.ident is null) return;
+        if(abbreviation != Abbreviation.None) {
+          sink(abbreviation);
+        } if(substitution) {
+          substitution.mangleTo(sink);
+        }else {
+          encodeName(sink, sym);
+        }
+      }
   }
 
-  struct Variable {
+  class Substitutions {
+    Substitution get(Dsymbol sym) const {
+      return Substitution();
+    }
+    void put(Dsymbol sym) {
+    }
+  }
+
+  class ScopeNesting {
+    Substitutions substitutions;
+    CScopeSymbol[] parents;
+    TemplateInstance templateInstance;
+
+    this(Substitutions substitutions, Dsymbol first) {
+      this.substitutions = substitutions;
+      for(Dsymbol current = first;
+          current && !current.isModule;
+          current = current.parent) {
+        parents ~= CScopeSymbol(current);
+      }
+      templateInstance = parents.length > 0 ? parents[0].sym.isTemplateInstance : null;
+    }
+
+    void mangleTo(scope void delegate(const(char)[]) sink) const {
+      foreach_reverse(p; parents) {
+        p.mangleTo(sink);
+      }
+    }
+
+    void reduce() {
+      foreach(i, scopeSymbol; parents) {
+        if(scopeSymbol.update(substitutions)) {
+          parents = parents[0..i+1];
+          return;
+        }
+      }
+    }
+
+    @property bool isNested() const {
+      return parents.length >= (templateInstance ? 2 : 1);
+    }
+  }
+
+  class Variable {
     VarDeclaration declaration;
     Identifier identifier;
     Type type;
-    Dsymbol[] parents;
+    scope Substitutions substitutions;
+    scope ScopeNesting nesting;
     bool isPrefixed;
-    bool isNested;
 
     this(VarDeclaration decl)
     {
       declaration = decl;
       identifier = decl.ident;
       type = declaration.type;
-      parents = getParents(declaration);
-      isPrefixed = parents.length > 0 || type.isConst;
-      isNested = false;
+      substitutions = new Substitutions();
+      nesting = new ScopeNesting(substitutions, declaration.parent);
+      isPrefixed = nesting.parents.length > 0 || type.isConst;
     }
 
     void toString(scope void delegate(const(char)[]) sink)
     {
-      import std.conv : to;
-      @property string str(T)(T value) {
-        return value.toChars().to!string;
-      }
-      sink("Variable: ");
-      sink(str(type));
-      sink(" ");
-      sink(str(identifier));
-      sink(", parents: [");
-      foreach(i, parent; parents) {
-        if(i) sink(", ");
-        sink(str(parent));
-      }
-      sink("]");
-      sink(", prefixed: ");
-      sink(isPrefixed ? "yes" : "no");
-      sink(", nested: ");
-      sink(isNested ? "yes" : "no");
-      sink("\n >> ");
-      scope auto foo = (const(char)[] a) {
-        sink(" ");
-        sink(a);
-      };
-      output(foo, this);
-      sink("\n");
+      output(sink);
+    }
+
+    void output(scope void delegate(const(char)[]) sink)
+    {
+      if(isPrefixed) sink("_Z");
+      nesting.reduce();
+      if(nesting.isNested) sink("N");
+      nesting.mangleTo(sink);
+      if(isPrefixed)
+        encodeName(sink, declaration);
+      else
+        encodeCName(sink, declaration);
+      if(nesting.isNested) sink("E");
     }
   }
 
-  struct Function {
+  class Function {
     FuncDeclaration declaration;
     Identifier identifier;
     TypeFunction type;
     Type returnType;
     Parameter[] parameters;
-    Dsymbol[] parents;
-    TemplateInstance templateInstance;
-    bool isPrefixed = true; // couldn't find an unprefixed function yet.
-    bool isNested;
+    scope Substitutions substitutions;
+    scope ScopeNesting nesting;
 
     this(FuncDeclaration decl)
     {
@@ -452,70 +528,27 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       returnType = type.next;
       assert(type.parameters);
       parameters = (*type.parameters)[];
-      parents = getParents(declaration);
-      templateInstance = getTemplateInstance(parents);
-      isNested = parents.length >= (templateInstance ? 2 : 1);
+      substitutions = new Substitutions();
+      nesting = new ScopeNesting(substitutions, declaration.parent);
     }
 
     void toString(scope void delegate(const(char)[]) sink)
     {
-      import std.conv : to;
-      @property string str(T)(T value) {
-        return value.toChars().to!string;
-      }
-      sink("Function: ");
-      sink(str(returnType));
-      sink(" ");
-      sink(str(identifier));
-      sink("(");
-      foreach(i, param; parameters) {
-        if(i) sink(", ");
-        sink(i.to!string);
-      }
-      sink(")");
-      if(templateInstance) sink(" !!");
-      sink(", parents: [");
-      foreach(i, parent; parents) {
-        if(i) sink(", ");
-        sink(str(parent));
-      }
-      sink("]");
-      sink(", prefixed: ");
-      sink(isPrefixed ? "yes" : "no");
-      sink(", nested: ");
-      sink(isNested ? "yes" : "no");
-      sink("\n >> ");
-      scope auto foo = (const(char)[] a) {
-        sink(" ");
-        sink(a);
-      };
-      output(foo, this);
-      sink("\n");
+      output(sink);
     }
-  }
 
-  void output(T)(scope void delegate(const(char)[]) sink, in T value)
-  if(is(T == Variable) || is(T == Function)) {
-    if(value.isPrefixed) sink("_Z");
-    outputDeclaration(sink, value);
-  }
-
-  void outputDeclaration(T)(scope void delegate(const(char)[]) sink, in T value)
-  if(is(T == Variable) || is(T == Function)) {
-    if(value.isNested) sink("N");
-    foreach_reverse(p; value.parents) {
-      if(p.ident is null) continue;
-      encodeName(sink, p);
-    }
-    encodeName(sink, value.declaration);
-    static if(is(T == Function)) {
-      if(value.templateInstance) {
-        encodeTemplateArgs(sink, value.templateInstance);
+    void output(scope void delegate(const(char)[]) sink)
+    {
+      sink("_Z");
+      nesting.reduce();
+      if(nesting.isNested) sink("N");
+      nesting.mangleTo(sink);
+      encodeName(sink, declaration);
+      if(nesting.templateInstance) {
+        encodeTemplateArgs(sink, nesting.templateInstance);
       }
-    }
-    if(value.isNested) sink("E");
-    static if(is(T == Function)) {
-      if(value.templateInstance) {
+      if(nesting.isNested) sink("E");
+      if(nesting.templateInstance) {
         sink("_RET_TYPE_");
       }
     }
@@ -526,9 +559,15 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     sink("E");
   }
 
-  void encodeName(scope void delegate(const(char)[]) sink, in Dsymbol symbol) {
-    auto name = symbol.ident.string;
+  void encodeCName(scope void delegate(const(char)[]) sink, in Dsymbol symbol) {
     import std.conv : to; // TODO: remove use of standard library
+    auto name = symbol.ident.string;
+    sink(to!string(name));
+  }
+
+  void encodeName(scope void delegate(const(char)[]) sink, in Dsymbol symbol) {
+    import std.conv : to; // TODO: remove use of standard library
+    auto name = symbol.ident.string;
     sink(to!string(strlen(name)));
     sink(to!string(name));
   }
@@ -537,19 +576,17 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
   {
       import std.stdio;
       alias visit = super.visit;
-      @property string str(T)(T value) {
-        import std.conv : to;
-        return value.toChars().to!string;
-      }
 
       override void visit(FuncDeclaration declaration) {
         assert(declaration.linkage == LINKcpp);
-        writeln(Function(declaration));
+        scope auto func = new Function(declaration);
+        writeln(func);
       }
 
       override void visit(VarDeclaration declaration) {
         assert(declaration.linkage == LINKcpp);
-        writeln(Variable(declaration));
+        scope auto var = new Variable(declaration);
+        writeln(var);
       }
   }
 
