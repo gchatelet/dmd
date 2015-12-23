@@ -376,6 +376,72 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     return value.toChars().to!string;
   }
 
+
+  /////////////////////////////////////////////////////////////////////////////
+  // TODO: enhance those helpers
+  /////////////////////////////////////////////////////////////////////////////
+  bool isStdNamespace(in Dsymbol sym) {
+    Dsymbol symbol = cast(Dsymbol)sym;
+    return symbol.isNspace && Id.std.equals(symbol.ident);
+  }
+
+  bool isTypeChar(in RootObject obj) {
+    auto object = cast(RootObject)obj;
+    if (object.dyncast != DYNCAST_TYPE) return false;
+    auto typeBasic = (cast(Type)object).isTypeBasic;
+    return typeBasic && typeBasic.ty == Tchar && typeBasic.isNaked;
+  }
+
+  bool isAllocatorTemplate(in Dsymbol sym) {
+    Dsymbol symbol = cast(Dsymbol)sym;
+    auto templateInstance = symbol.isTemplateInstance;
+    if (!templateInstance) return false;
+    if (!Id.allocator.equals(templateInstance.name)) return false;
+    return true;
+  }
+
+  bool isCharTemplate(in Identifier id, in RootObject obj) {
+    Identifier identifier = cast(Identifier)id;
+    auto object = cast(RootObject)obj;
+    if (object.dyncast != DYNCAST_TYPE) return false;
+    auto symbol = (cast(Type)object).toDsymbol(null);
+    if (!symbol) return false;
+    auto structDeclaration = symbol.isStructDeclaration;
+    if (!structDeclaration) return false;
+    auto parent = structDeclaration.toParent;
+    if (!parent) return false;
+    auto templateInstance = parent.isTemplateInstance();
+    if (!templateInstance) return false;
+    if (!identifier.equals(templateInstance.name)) return false;
+    assert(templateInstance.tiargs);
+    auto templateArguments = (*templateInstance.tiargs)[];
+    return templateArguments.length == 1 && isTypeChar(templateArguments[0]);
+  }
+
+  bool isBasicStreamTemplate(in Identifier id, in Dsymbol sym) {
+    Identifier identifier = cast(Identifier)id;
+    Dsymbol symbol = cast(Dsymbol)sym;
+    auto templateInstance = symbol.isTemplateInstance();
+    if (!templateInstance) return false;
+    if (!identifier.equals(templateInstance.name)) return false;
+    assert(templateInstance.tiargs);
+    auto templateArguments = (*templateInstance.tiargs)[];
+    return templateArguments.length == 2 && isTypeChar(templateArguments[0])
+            && isCharTemplate(Id.char_traits, templateArguments[1]);
+  }
+
+  bool isBasicStringTemplate(in Dsymbol sym) {
+    Dsymbol symbol = cast(Dsymbol)sym;
+    auto templateInstance = symbol.isTemplateInstance();
+    if (!templateInstance) return false;
+    if (!Id.basic_string.equals(templateInstance.name)) return false;
+    assert(templateInstance.tiargs);
+    auto templateArguments = (*templateInstance.tiargs)[];
+    return templateArguments.length == 3 && isTypeChar(templateArguments[0])
+            && isCharTemplate(Id.char_traits, templateArguments[1])
+            && isCharTemplate(Id.allocator, templateArguments[2]);
+  }
+
   enum Abbreviation : string {
     None = "None",
     St = "St", // ::std::
@@ -387,7 +453,19 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     Sd = "Sd", // ::std::basic_iostream<char, ::std::char_traits<char> >
   }
 
-  Abbreviation getAbbreviation(in Dsymbol sym) {
+  Abbreviation getAbbreviation(in Dsymbol symbol) {
+    if(isStdNamespace(symbol))
+      return Abbreviation.St;
+    if (isAllocatorTemplate(symbol))
+        return Abbreviation.Sa;
+    if (isBasicStreamTemplate(Id.basic_iostream, symbol))
+        return Abbreviation.Sd;
+    if (isBasicStreamTemplate(Id.basic_ostream, symbol))
+        return Abbreviation.So;
+    if (isBasicStreamTemplate(Id.basic_istream, symbol))
+        return Abbreviation.Si;
+    if (isBasicStringTemplate(symbol))
+        return Abbreviation.Ss;
     return Abbreviation.None;
   }
 
@@ -399,9 +477,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     }
 
     void mangleTo(scope void delegate(const(char)[]) sink) const {
-      assert(index >= 0);
+      assert(cast(bool)this == true);
       sink("S");
-      if(index > 0) sink(to!string(index-1));
+      if(index > 0) sink(to!string(index - 1));
       sink("_");
     }
   }
@@ -461,7 +539,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     }
 
     void reduce() {
-      foreach(i, scopeSymbol; parents) {
+      foreach(i, ref scopeSymbol; parents) {
         if(scopeSymbol.update(substitutions)) {
           parents = parents[0..i+1];
           return;
