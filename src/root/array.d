@@ -24,6 +24,8 @@ private:
     T[SMALLARRAYCAP] smallarray; // inline storage for small arrays
 
 public:
+    @disable this(this){}
+
     ~this()
     {
         if (data != &smallarray[0])
