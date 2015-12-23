@@ -333,42 +333,85 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
   extern (C++) final class TypeVisitor : NullVisitor
   {
-      import std.stdio;
       alias visit = super.visit;
-      @property string str(T)(T value) {
-        import std.conv : to;
-        return value.toChars().to!string;
-      }
+      extern(D) void delegate(Type) push;
+      extern(D) this(void delegate(Type) push) { this.push = push; }
 
-      override void visit(TypeFunction type) {
-        write("Function: ");
-        assert(type.next);
+      override void visit(TypeNext type) {
+        push(type);
         type.next.accept(this);
       }
 
-      override void visit(TypeBasic type) {
-        write("basic(", str(type), ")");
-      }
+      override void visit(TypeFunction type) { visit(cast(TypeNext)type); }
+      override void visit(TypePointer type) { visit(cast(TypeNext)type); }
+      override void visit(TypeReference type) { visit(cast(TypeNext)type); }
 
-      override void visit(TypePointer type) {
-        write("*");
-        assert(type.next);
-        type.next.accept(this);
-      }
+      override void visit(TypeBasic type) { push(type); }
+      override void visit(TypeStruct type) { push(type); }
+      override void visit(TypeClass type) { push(type); }
 
-      override void visit(TypeReference type) {
-        write("&");
-        assert(type.next);
-        type.next.accept(this);
+      extern(D) static browse(void delegate(Type) push, Type type) {
+        scope visitor = new TypeVisitor(push);
+        type.accept(visitor);
       }
+  }
 
-      override void visit(TypeStruct type) {
-        write("struct(", str(type.sym), ")");
-      }
+  extern (C++) final class ComponentManglingPusher : NullVisitor
+  {
+    alias visit = super.visit;
+    extern(D) void delegate(const(char)[]) push;
+    extern(D) this(void delegate(const(char)[]) push) { this.push = push; }
 
-      override void visit(TypeClass type) {
-        write("class(", str(type.sym), ")");
+    override void visit(TypePointer t) { push("P"); }
+    override void visit(TypeReference t) { push("R"); }
+    override void visit(TypeStruct t) { encodeName(push, t.sym); }
+    override void visit(TypeClass t) { encodeName(push, t.sym); }
+    override void visit(TypeBasic t) {
+      switch(t.ty) {
+        case Tvoid: push( "v");break;
+        case Tint8: push( "a");break;
+        case Tuns8: push( "h");break;
+        case Tint16: push( "s");break;
+        case Tuns16: push( "t");break;
+        case Tint32: push( "i");break;
+        case Tuns32: push( "j");break;
+        case Tint64: push( Target.c_longsize == 8 ? "l" : "x");break;
+        case Tuns64: push( Target.c_longsize == 8 ? "m" : "y");break;
+        case Tint128: push( "n");break;
+        case Tuns128: push( "o");break;
+        case Tfloat32: push( "f");break;
+        case Tfloat64: push( "d");break;
+        case Tfloat80: push( Target.realsize - Target.realpad == 16 ? "g" : "e");break;
+        case Timaginary32: push( "Gf");break;
+        case Timaginary64: push( "Gd");break;
+        case Timaginary80: push( "Ge");break;
+        case Tcomplex32: push( "Cf");break;
+        case Tcomplex64: push( "Cd");break;
+        case Tcomplex80: push( "Ce");break;
+        case Tbool: push( "b");break;
+        case Tchar: push( "c");break;
+        case Twchar: push( "t");break;
+        case Tdchar: push( "w");break;
+        default: assert(false);
       }
+    }
+
+    override void visit(Nspace d) { encodeName(push, d); }
+    override void visit(StructDeclaration d) { encodeName(push, d); }
+    override void visit(ClassDeclaration d) { encodeName(push, d); }
+    override void visit(TemplateInstance d) {}
+
+    extern(D) static void visit(void delegate(const(char)[]) push, RootObject o) {
+      scope auto visitor = new ComponentManglingPusher(push);
+      final switch(o.dyncast) {
+        case DYNCAST_TYPE:
+          (cast(Type)o).accept(visitor);
+          break;
+        case DYNCAST_DSYMBOL:
+          (cast(Dsymbol)o).accept(visitor);
+          break;
+      }
+    }
   }
 
   import std.conv : to;
@@ -385,7 +428,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     return symbol.isNspace && Id.std.equals(symbol.ident);
   }
 
-  bool isTypeChar(in RootObject obj) {
+  bool isCharType(in RootObject obj) {
     auto object = cast(RootObject)obj;
     if (object.dyncast != DYNCAST_TYPE) return false;
     auto typeBasic = (cast(Type)object).isTypeBasic;
@@ -400,8 +443,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     return true;
   }
 
-  bool isCharTemplate(in Identifier id, in RootObject obj) {
-    Identifier identifier = cast(Identifier)id;
+  bool isTemplate(in Identifier id, in RootObject obj) {
     auto object = cast(RootObject)obj;
     if (object.dyncast != DYNCAST_TYPE) return false;
     auto symbol = (cast(Type)object).toDsymbol(null);
@@ -412,22 +454,23 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     if (!parent) return false;
     auto templateInstance = parent.isTemplateInstance();
     if (!templateInstance) return false;
+    auto identifier = cast(Identifier)id;
     if (!identifier.equals(templateInstance.name)) return false;
     assert(templateInstance.tiargs);
     auto templateArguments = (*templateInstance.tiargs)[];
-    return templateArguments.length == 1 && isTypeChar(templateArguments[0]);
+    return templateArguments.length == 1 && isCharType(templateArguments[0]);
   }
 
   bool isBasicStreamTemplate(in Identifier id, in Dsymbol sym) {
-    Identifier identifier = cast(Identifier)id;
-    Dsymbol symbol = cast(Dsymbol)sym;
+    auto identifier = cast(Identifier)id;
+    auto symbol = cast(Dsymbol)sym;
     auto templateInstance = symbol.isTemplateInstance();
     if (!templateInstance) return false;
     if (!identifier.equals(templateInstance.name)) return false;
     assert(templateInstance.tiargs);
     auto templateArguments = (*templateInstance.tiargs)[];
-    return templateArguments.length == 2 && isTypeChar(templateArguments[0])
-            && isCharTemplate(Id.char_traits, templateArguments[1]);
+    return templateArguments.length == 2 && isCharType(templateArguments[0])
+            && isTemplate(Id.char_traits, templateArguments[1]);
   }
 
   bool isBasicStringTemplate(in Dsymbol sym) {
@@ -437,13 +480,13 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     if (!Id.basic_string.equals(templateInstance.name)) return false;
     assert(templateInstance.tiargs);
     auto templateArguments = (*templateInstance.tiargs)[];
-    return templateArguments.length == 3 && isTypeChar(templateArguments[0])
-            && isCharTemplate(Id.char_traits, templateArguments[1])
-            && isCharTemplate(Id.allocator, templateArguments[2]);
+    return templateArguments.length == 3 && isCharType(templateArguments[0])
+            && isTemplate(Id.char_traits, templateArguments[1])
+            && isTemplate(Id.allocator, templateArguments[2]);
   }
 
   enum Abbreviation : string {
-    None = "None",
+    None = null,
     St = "St", // ::std::
     Sa = "Sa", // ::std::allocator
     Sb = "Sb", // ::std::basic_string
@@ -453,19 +496,30 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     Sd = "Sd", // ::std::basic_iostream<char, ::std::char_traits<char> >
   }
 
-  Abbreviation getAbbreviation(in Dsymbol symbol) {
-    if(isStdNamespace(symbol))
-      return Abbreviation.St;
-    if (isAllocatorTemplate(symbol))
-        return Abbreviation.Sa;
-    if (isBasicStreamTemplate(Id.basic_iostream, symbol))
-        return Abbreviation.Sd;
-    if (isBasicStreamTemplate(Id.basic_ostream, symbol))
-        return Abbreviation.So;
-    if (isBasicStreamTemplate(Id.basic_istream, symbol))
-        return Abbreviation.Si;
-    if (isBasicStringTemplate(symbol))
-        return Abbreviation.Ss;
+  Dsymbol asSymbol(RootObject object) {
+    return object.dyncast == DYNCAST_DSYMBOL ? cast(Dsymbol)object : null;
+  }
+
+  Type asType(RootObject object) {
+    return object.dyncast == DYNCAST_TYPE ? cast(Type)object : null;
+  }
+
+  Abbreviation getAbbreviation(RootObject object) {
+    auto symbol = asSymbol(object);
+    if(symbol) {
+      if(isStdNamespace(symbol))
+        return Abbreviation.St;
+      if (isAllocatorTemplate(symbol))
+          return Abbreviation.Sa;
+      if (isBasicStreamTemplate(Id.basic_iostream, symbol))
+          return Abbreviation.Sd;
+      if (isBasicStreamTemplate(Id.basic_ostream, symbol))
+          return Abbreviation.So;
+      if (isBasicStreamTemplate(Id.basic_istream, symbol))
+          return Abbreviation.Si;
+      if (isBasicStringTemplate(symbol))
+          return Abbreviation.Ss;
+    }
     return Abbreviation.None;
   }
 
@@ -476,79 +530,93 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       return index >= 0;
     }
 
-    void mangleTo(scope void delegate(const(char)[]) sink) const {
+    void mangleTo(scope void delegate(const(char)[]) push) const {
       assert(cast(bool)this == true);
-      sink("S");
-      if(index > 0) sink(to!string(index - 1));
-      sink("_");
+      push("S");
+      if(index > 0) push(to!string(index - 1));
+      push("_");
     }
   }
 
-  struct CScopeSymbol {
-      Dsymbol sym;
+  class Substitutions {
+    Substitution get(RootObject object) const { return Substitution(); }
+    void put(RootObject object) {}
+  }
+
+  struct Component {
+      RootObject object;
       Abbreviation abbreviation;
       Substitution substitution;
 
       bool update(Substitutions substitutions) {
-        abbreviation = getAbbreviation(sym);
-        if(abbreviation != Abbreviation.None) return true;
-        substitution = substitutions.get(sym);
+        abbreviation = getAbbreviation(object);
+        if(abbreviation) return true;
+        substitution = substitutions.get(object);
         if(substitution) return true;
         return false;
       }
 
-      void mangleTo(scope void delegate(const(char)[]) sink) const {
-        if(sym.ident is null) return;
-        if(abbreviation != Abbreviation.None) {
-          sink(abbreviation);
-        } if(substitution) {
-          substitution.mangleTo(sink);
-        }else {
-          encodeName(sink, sym);
+      void mangleTo(scope void delegate(const(char)[]) push) {
+        if(abbreviation) {
+          push(abbreviation);
+        } else if(substitution) {
+          substitution.mangleTo(push);
+        } else {
+          ComponentManglingPusher.visit(push, object);
         }
       }
   }
 
-  class Substitutions {
-    Substitution get(Dsymbol sym) const {
-      return Substitution();
-    }
-    void put(Dsymbol sym) {
-    }
-  }
-
-  class ScopeNesting {
+  class ComponentChain {
     Substitutions substitutions;
-    CScopeSymbol[] parents;
+    Component[] components;
     TemplateInstance templateInstance;
 
-    this(Substitutions substitutions, Dsymbol first) {
+    this(Substitutions substitutions, Dsymbol first) in {
+      assert(first);
+    } body {
       this.substitutions = substitutions;
-      for(Dsymbol current = first;
-          current && !current.isModule;
-          current = current.parent) {
-        parents ~= CScopeSymbol(current);
+      for(Dsymbol current = first; current && !current.isModule; current = current.parent) {
+        components ~= Component(current);
       }
-      templateInstance = parents.length > 0 ? parents[0].sym.isTemplateInstance : null;
+      templateInstance = components.length > 0 ? first.isTemplateInstance : null;
     }
 
-    void mangleTo(scope void delegate(const(char)[]) sink) const {
-      foreach_reverse(p; parents) {
-        p.mangleTo(sink);
+    this(Substitutions substitutions, Type first) in {
+      assert(first);
+    } body {
+      this.substitutions = substitutions;
+      auto push = (Type type){
+        components ~= Component(type);
+      };
+      TypeVisitor.browse(push, first);
+    }
+
+    void mangleTo(scope void delegate(const(char)[]) push) {
+      foreach_reverse(component; components) {
+        component.mangleTo(push);
       }
     }
 
     void reduce() {
-      foreach(i, ref scopeSymbol; parents) {
-        if(scopeSymbol.update(substitutions)) {
-          parents = parents[0..i+1];
+      foreach(i, component; components) {
+        if(component.update(substitutions)) {
+          components = components[0..i + 1];
           return;
         }
       }
     }
 
     @property bool isNested() const {
-      return parents.length >= (templateInstance ? 2 : 1);
+      return components.length >= (templateInstance ? 2 : 1);
+    }
+
+    static void display(scope void delegate(const(char)[]) push, Substitutions substitutions, Type type) {
+      scope ComponentChain typeChain = new ComponentChain(substitutions, type);
+      typeChain.reduce();
+      if(typeChain.isNested) push("N");
+      typeChain.mangleTo(push);
+      if(typeChain.isNested) push("E");
     }
   }
 
@@ -557,7 +625,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     Identifier identifier;
     Type type;
     scope Substitutions substitutions;
-    scope ScopeNesting nesting;
+    scope ComponentChain scopeChain;
     bool isPrefixed;
 
     this(VarDeclaration decl)
@@ -566,26 +634,26 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       identifier = decl.ident;
       type = declaration.type;
       substitutions = new Substitutions();
-      nesting = new ScopeNesting(substitutions, declaration.parent);
-      isPrefixed = nesting.parents.length > 0 || type.isConst;
+      scopeChain = new ComponentChain(substitutions, declaration.parent);
+      isPrefixed = scopeChain.components.length > 0 || type.isConst;
     }
 
-    void toString(scope void delegate(const(char)[]) sink)
+    void toString(scope void delegate(const(char)[]) push)
     {
-      output(sink);
+      output(push);
     }
 
-    void output(scope void delegate(const(char)[]) sink)
+    void output(scope void delegate(const(char)[]) push)
     {
-      if(isPrefixed) sink("_Z");
-      nesting.reduce();
-      if(nesting.isNested) sink("N");
-      nesting.mangleTo(sink);
+      if(isPrefixed) push("_Z");
+      scopeChain.reduce();
+      if(scopeChain.isNested) push("N");
+      scopeChain.mangleTo(push);
       if(isPrefixed)
-        encodeName(sink, declaration);
+        encodeName(push, declaration);
       else
-        encodeCName(sink, declaration);
-      if(nesting.isNested) sink("E");
+        encodeCName(push, declaration);
+      if(scopeChain.isNested) push("E");
     }
   }
 
@@ -596,7 +664,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     Type returnType;
     Parameter[] parameters;
     scope Substitutions substitutions;
-    scope ScopeNesting nesting;
+    scope ComponentChain scopeChain;
 
     this(FuncDeclaration decl)
     {
@@ -607,47 +675,53 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
       assert(type.parameters);
       parameters = (*type.parameters)[];
       substitutions = new Substitutions();
-      nesting = new ScopeNesting(substitutions, declaration.parent);
+      scopeChain = new ComponentChain(substitutions, declaration.parent);
     }
 
-    void toString(scope void delegate(const(char)[]) sink)
+    void toString(scope void delegate(const(char)[]) push)
     {
-      output(sink);
+      output(push);
     }
 
-    void output(scope void delegate(const(char)[]) sink)
+    void output(scope void delegate(const(char)[]) push)
     {
-      sink("_Z");
-      nesting.reduce();
-      if(nesting.isNested) sink("N");
-      nesting.mangleTo(sink);
-      encodeName(sink, declaration);
-      if(nesting.templateInstance) {
-        encodeTemplateArgs(sink, nesting.templateInstance);
+      push("_Z");
+      scopeChain.reduce();
+      if(scopeChain.isNested) push("N");
+      scopeChain.mangleTo(push);
+      encodeName(push, declaration);
+      if(scopeChain.templateInstance) {
+        encodeTemplateArgs(push, scopeChain.templateInstance);
       }
-      if(nesting.isNested) sink("E");
-      if(nesting.templateInstance) {
-        sink("_RET_TYPE_");
+      if(scopeChain.isNested) push("E");
+      if(scopeChain.templateInstance) {
+        ComponentChain.display(push, substitutions, returnType);
       }
+    }
+
+    void encodeTemplateArgs(scope void delegate(const(char)[]) push, TemplateInstance templateInstance) {
+      push("I");
+      auto arguments = (*templateInstance.tiargs)[];
+      if(arguments.length == 0) {
+        ComponentChain.display(push, substitutions, Type.tvoid);
+      } else foreach(argument; arguments) {
+        ComponentChain.display(push, substitutions, cast(Type)argument);
+      }
+      push("E");
     }
   }
 
-  void encodeTemplateArgs(scope void delegate(const(char)[]) sink, in TemplateInstance templateInstance) {
-    sink("I");
-    sink("E");
-  }
-
-  void encodeCName(scope void delegate(const(char)[]) sink, in Dsymbol symbol) {
+  void encodeCName(scope void delegate(const(char)[]) push, in Dsymbol symbol) {
     import std.conv : to; // TODO: remove use of standard library
     auto name = symbol.ident.string;
-    sink(to!string(name));
+    push(to!string(name));
   }
 
-  void encodeName(scope void delegate(const(char)[]) sink, in Dsymbol symbol) {
+  void encodeName(scope void delegate(const(char)[]) push, in Dsymbol symbol) {
     import std.conv : to; // TODO: remove use of standard library
     auto name = symbol.ident.string;
-    sink(to!string(strlen(name)));
-    sink(to!string(name));
+    push(to!string(strlen(name)));
+    push(to!string(name));
   }
 
   extern (C++) final class AstVisitor : NullVisitor
