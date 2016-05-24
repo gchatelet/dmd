@@ -1202,6 +1202,61 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     
     enum MangleAs { C, CPP }
 
+    static struct TypeProxy {
+        Type type;
+                
+        bool canSubstitute() {
+            assert((type.isTypeBasic && type.isConst) || !type.isTypeBasic);
+            return true;
+        }
+
+        size_t toHash() const nothrow @safe {
+            return cast(size_t)(type.deco); // using deco's address as hash.
+        }
+
+        bool opEquals(ref const TypeProxy other) const nothrow @safe {
+            const Type a = type;
+            const Type b = other.type;
+            assert(a && b);
+            return a is b || (a.deco is b.deco && a.deco !is null);
+        }
+    }
+    
+    static struct SymbolProxy {
+        Dsymbol symbol;
+        const(char)[] name;
+        size_t hash;
+        
+        this(Dsymbol symbol) {
+            this.symbol = symbol;
+            this.name = symbol.ident.toString();
+            this.hash = adler32(name);
+            printf("hash %X '%.*s'\n", hash, name.length, name.ptr);
+        }
+                
+        bool canSubstitute() {
+            return !symbol.isDeclaration;
+        }
+
+        size_t toHash() const @safe pure nothrow {
+            return hash;
+        }
+
+        bool opEquals(ref const SymbolProxy other) const @safe pure nothrow {
+            return name[] == other.name[];
+        }
+
+        private static uint adler32(const(void)[] blob) nothrow @safe {
+           uint s1 = 1;
+           uint s2 = 0;
+           foreach (b; cast(const(ubyte)[])blob) {
+               s1 = (s1 + b) % 65521;
+               s2 = (s2 + s1) % 65521;
+           }     
+           return (s2 << 16) | s1;
+       }
+    }
+ 
     final class Context {
         extern(D):
 
@@ -1209,112 +1264,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             mangleAs = value;
         }
         
-        void substituteOrMangle(Type type, void delegate() mangle) {
-            auto proxy = TypeProxy(type);
-            const canSubstitute = proxy.canSubstitute();
-            bool substitute(Type type) {
-                if (!canSubstitute) return false;
-                if (auto found = proxy in types) {
-                    add(*found);
-                    printf("substituting %s: %s with %.*s\n", Typename.get(type), type.toChars(), found.length, found.ptr);
-                    return true;
-                }
-                return false;
-            }
-            void addType(Type type) {
-                if (!canSubstitute) return;
-                if (proxy !in types) {
-                    string id = nextSubstitution();
-                    types[proxy] = id;
-                    printf("Adding %s: %.*s %s\n", proxy.type.deco, id.length, id.ptr, proxy.type.toChars());
-                }
-            }
-            if (!substitute(type)) {
-                mangle();
-                addType(type);
-            }
-        }
-        
-        void substituteOrMangle(Dsymbol symbol, void delegate() mangle) {
-            bool substitute(Dsymbol symbol) {
-                auto proxy = SymbolProxy(symbol);
-                const canSubstitute = proxy.canSubstitute();
-                printf("try substitute\n");
-                if (!canSubstitute) return false;
-                printf("can substitute, available keys\n");
-                foreach(key, value; symbols) {
-                    printf("%.*s:%.*s\n", key.name.length, key.name.ptr, value.length, value.ptr);
-                }
-                if (auto found = proxy in symbols) {
-                    add(*found);
-                    printf(">>>substituting %s: %s with %.*s\n", Typename.get(symbol), symbol.toChars(), found.length, found.ptr);
-                    return true;
-                }
-                return false;
-            }
-            void addSymbol(Dsymbol symbol) {
-                auto proxy = SymbolProxy(symbol);
-                const canSubstitute = proxy.canSubstitute();
-                if (!canSubstitute) return;
-                if (proxy !in symbols) {
-                    string id = nextSubstitution();
-                    symbols[proxy] = id;
-                    printf("Adding symbol: %.*s %s\n", id.length, id.ptr, proxy.symbol.toChars());
-                }
-            }
-            if (!substitute(symbol)) {
-                printf("did not substitute\n");
-                mangle();
-                addSymbol(symbol);
-            }
-        }
-
-        static struct TypeProxy {
-            Type type;
-                    
-            bool canSubstitute() {
-                assert((type.isTypeBasic && type.isConst) || !type.isTypeBasic);
-                return true;
-            }
-
-            size_t toHash() const nothrow @safe {
-                return cast(size_t)(type.deco); // using deco's address as hash.
-            }
-
-            bool opEquals(ref const TypeProxy other) const nothrow @safe {
-                const Type a = type;
-                const Type b = other.type;
-                assert(a && b);
-                return a is b || (a.deco is b.deco && a.deco !is null);
-            }
-        }
-        
-        static struct SymbolProxy {
-            Dsymbol symbol;
-            const(char)[] name;
-            size_t hash;
-            
-            this(Dsymbol symbol) {
-                this.symbol = symbol;
-                this.name = symbol.ident.toString();
-                this.hash = adler32(name);
-                printf("hash %X '%.*s'\n", hash, name.length, name.ptr);
-            }
-                    
-            bool canSubstitute() {
-                return !symbol.isDeclaration;
-            }
-
-            size_t toHash() const @safe pure nothrow {
-                return hash;
-            }
-
-            bool opEquals(ref const SymbolProxy other) const @safe pure nothrow {
-                return name[] == other.name[];
-            }
-        }
-
-        private static void writeBase36(size_t i, ref string output) {
+       private static void writeBase36(size_t i, ref string output) {
             if (i < 10) {
                 output ~= cast(char)(i + '0');
             } else if (i < 36) {
@@ -1325,17 +1275,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             }
         }
         
-        private static uint adler32(const(void)[] blob) nothrow @safe {
-            uint s1 = 1;
-            uint s2 = 0;
-            foreach (b; cast(const(ubyte)[])blob) {
-                s1 = (s1 + b) % 65521;
-                s2 = (s2 + s1) % 65521;
-            }     
-            return (s2 << 16) | s1;
-        }
-        
-        private string nextSubstitution() {
+       private string nextSubstitution() {
             string getEncoding(char type, size_t i) {
                 string output;
                 output ~= type;
@@ -1373,16 +1313,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
   
         auto fork() {
-            auto ctx = new Context();
-            ctx.mangleAs = mangleAs;
-            ctx.types = types;
-            ctx.symbols = symbols;
-            return ctx;
+            return new Appender(ctx);
         }
         
-        void merge(ref const Context ctx, bool enclosed) {
+        void merge(ref const Appender appender, bool enclosed) {
             if(enclosed) add('N');
-            add(ctx.buffer);
+            add(appender.buffer);
             if(enclosed) add('E');
         }
         
@@ -1391,11 +1327,68 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             printf("finish: %s\n", buffer.ptr);
             return cast(const(char)*)buffer;
         }
+
+        void substituteOrMangle(Type type, void delegate() mangle) {
+            auto proxy = TypeProxy(type);
+            const canSubstitute = proxy.canSubstitute();
+            bool substitute(Type type) {
+                if (!canSubstitute) return false;
+                if (auto found = proxy in ctx.types) {
+                    add(*found);
+                    printf("substituting %s: %s with %.*s\n", Typename.get(type), type.toChars(), found.length, found.ptr);
+                    return true;
+                }
+                return false;
+            }
+            void addType(Type type) {
+                if (!canSubstitute) return;
+                if (proxy !in ctx.types) {
+                    string id = ctx.nextSubstitution();
+                    ctx.types[proxy] = id;
+                    printf("Adding %s: %.*s %s\n", proxy.type.deco, id.length, id.ptr, proxy.type.toChars());
+                }
+            }
+            if (!substitute(type)) {
+                mangle();
+                addType(type);
+            }
+        }
         
+        void substituteOrMangle(Dsymbol symbol, void delegate() mangle) {
+            bool substitute(Dsymbol symbol) {
+                auto proxy = SymbolProxy(symbol);
+                const canSubstitute = proxy.canSubstitute();
+                if (!canSubstitute) return false;
+                foreach(key, value; ctx.symbols) {
+                    printf("%.*s:%.*s\n", key.name.length, key.name.ptr, value.length, value.ptr);
+                }
+                if (auto found = proxy in ctx.symbols) {
+                    add(*found);
+                    printf(">>>substituting %s: %s with %.*s\n", Typename.get(symbol), symbol.toChars(), found.length, found.ptr);
+                    return true;
+                }
+                return false;
+            }
+            void addSymbol(Dsymbol symbol) {
+                auto proxy = SymbolProxy(symbol);
+                const canSubstitute = proxy.canSubstitute();
+                if (!canSubstitute) return;
+                if (proxy !in ctx.symbols) {
+                    string id = ctx.nextSubstitution();
+                    ctx.symbols[proxy] = id;
+                    printf("Adding symbol: %.*s %s\n", id.length, id.ptr, proxy.symbol.toChars());
+                }
+            }
+            if (!substitute(symbol)) {
+                mangle();
+                addSymbol(symbol);
+            }
+        }
+
         string buffer;
     }
 
-    static void mangleTemplateInstance(TemplateInstance s, Context ctx) {
+    static void mangleTemplateInstance(TemplateInstance s, Appender ctx) {
         if(s is null) return;
         ctx.add('I');
         auto arguments = s.tiargs;
@@ -1410,7 +1403,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         ctx.add('E');
     }
     
-    static bool mangleAbbreviation(ref ScopeDsymbol[] scopes, Context ctx) {
+    static bool mangleAbbreviation(ref ScopeDsymbol[] scopes, Appender ctx) {
         bool isTemplateId(Dsymbol sym, Identifier id) {
             if(sym is null) return false;
             auto templateInstance = isTemplateInstance(sym);
@@ -1453,7 +1446,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         return scopes.length > 0;
     }
     
-    static void mangleSymbol(Dsymbol sym, Context ctx) {
+    static void mangleSymbol(Dsymbol sym, Appender ctx) {
         ctx.substituteOrMangle(sym, () {
             ctx.add(sym.ident);
             auto templateInstance = isTemplateInstance(sym);
@@ -1461,7 +1454,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         });
     }
 
-    static void mangleSymbols(ScopeDsymbol[] scopes, Context ctx, Declaration decl) {
+    static void mangleSymbols(ScopeDsymbol[] scopes, Appender ctx, Declaration decl) {
         scope new_ctx = ctx.fork();
         if(decl && decl.type.isConst) {
             if(decl.isVarDeclaration) new_ctx.add('L');
@@ -1478,14 +1471,14 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         ctx.merge(new_ctx, enclosed);
     }
     
-    static void mangleParameter(Parameter parameter, Context ctx) {
+    static void mangleParameter(Parameter parameter, Appender ctx) {
         const isRef = parameter.storageClass & STCref;
         auto type = parameter.type;
         if(isRef) type = type.referenceTo();
         Types.mangle(type, ctx);
     }
     
-    static void mangleFunctionParameters(TypeFunction typeFun, Context ctx) {
+    static void mangleFunctionParameters(TypeFunction typeFun, Appender ctx) {
         assert(typeFun);
         auto parameters = typeFun.parameters;
         assert(parameters);
@@ -1503,12 +1496,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         return decl.parent.isTemplateInstance;
     }
         
-    static void mangleAggegateDeclaration(AggregateDeclaration decl, Context ctx) {
+    static void mangleAggegateDeclaration(AggregateDeclaration decl, Appender ctx) {
         auto scopes = Scopes.get(decl);
         mangleSymbols(scopes, ctx, null);
     }
     
-    static void mangleDeclaration(Declaration decl, Context ctx) {
+    static void mangleDeclaration(Declaration decl, Appender ctx) {
         auto scopes = Scopes.get(decl);
         const nested = scopes.length > 0;
         const mangleAsCpp = decl.isConst || nested || decl.isFuncDeclaration;
@@ -1533,13 +1526,14 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 //         printf("toCppMangle(%s)\n", s.toChars());
         printf("######################################################\n");
         scope ctx = new Context;
+        scope appender = new Appender(ctx);
         if(s.isVarDeclaration || s.isFuncDeclaration)
-            mangleDeclaration(s.isDeclaration, ctx);
+            mangleDeclaration(s.isDeclaration, appender);
         else
             error(Loc(), "Internal Compiler Error: unsupported type\n");
 //         scope CppMangleVisitor v = new CppMangleVisitor();
 //         return v.mangleOf(s);
-        return ctx.finish();
+        return appender.finish();
     }
 
     extern (C++) const(char)* cppTypeInfoMangle(Dsymbol s)
