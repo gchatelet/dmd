@@ -920,12 +920,626 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return buf.extractString();
         }
     }
+    
+    ///////////////////////////////////////////////////////////////////////////
+    // New implementation.
+    ///////////////////////////////////////////////////////////////////////////
+    
+    extern (C++) final class Typename : Visitor
+    {
+        import ddmd.aggregate;
+        import ddmd.dclass;
+        import ddmd.denum;
+        import ddmd.dmodule;
+        import ddmd.dstruct;
+        import ddmd.nspace;
+        import ddmd.dimport;
+        import ddmd.dversion;
+        import ddmd.staticassert;
+        import ddmd.aliasthis;
+        import ddmd.link;
+        import ddmd.attrib;
+        import ddmd.declaration;
+        import ddmd.statement;
+        alias visit = super.visit;
+        const(char)* name;
+        static const(char*) get(Dsymbol s) { scope visitor = new Typename(); s.accept(visitor); return visitor.name; }
+        static const(char*) get(Type s) { scope visitor = new Typename(); s.accept(visitor); return visitor.name; }
+        // Dsymbol
+        override void visit(AggregateDeclaration) { name = "AggregateDeclaration"; }
+        override void visit(AliasDeclaration) { name = "AliasDeclaration"; }
+        override void visit(AliasThis) { name = "AliasThis"; }
+        override void visit(AlignDeclaration) { name = "AlignDeclaration"; }
+        override void visit(AnonDeclaration) { name = "AnonDeclaration"; }
+        override void visit(ArrayScopeSymbol) { name = "ArrayScopeSymbol"; }
+        override void visit(AttribDeclaration) { name = "AttribDeclaration"; }
+        override void visit(ClassDeclaration) { name = "ClassDeclaration"; }
+        override void visit(CompileDeclaration) { name = "CompileDeclaration"; }
+        override void visit(ConditionalDeclaration) { name = "ConditionalDeclaration"; }
+        override void visit(CtorDeclaration) { name = "CtorDeclaration"; }
+        override void visit(DebugSymbol) { name = "DebugSymbol"; }
+        override void visit(Declaration) { name = "Declaration"; }
+        override void visit(DeleteDeclaration) { name = "DeleteDeclaration"; }
+        override void visit(DeprecatedDeclaration) { name = "DeprecatedDeclaration"; }
+        override void visit(DtorDeclaration) { name = "DtorDeclaration"; }
+        override void visit(EnumDeclaration) { name = "EnumDeclaration"; }
+        override void visit(EnumMember) { name = "EnumMember"; }
+        override void visit(FuncAliasDeclaration) { name = "FuncAliasDeclaration"; }
+        override void visit(FuncDeclaration) { name = "FuncDeclaration"; }
+        override void visit(FuncLiteralDeclaration) { name = "FuncLiteralDeclaration"; }
+        override void visit(Import) { name = "Import"; }
+        override void visit(InterfaceDeclaration) { name = "InterfaceDeclaration"; }
+        override void visit(InvariantDeclaration) { name = "InvariantDeclaration"; }
+        override void visit(LabelDsymbol) { name = "LabelDsymbol"; }
+        override void visit(LinkDeclaration) { name = "LinkDeclaration"; }
+        override void visit(Module) { name = "Module"; }
+        override void visit(NewDeclaration) { name = "NewDeclaration"; }
+        override void visit(Nspace) { name = "Nspace"; }
+        override void visit(OverDeclaration) { name = "OverDeclaration"; }
+        override void visit(OverloadSet) { name = "OverloadSet"; }
+        override void visit(Package) { name = "Package"; }
+        override void visit(PostBlitDeclaration) { name = "PostBlitDeclaration"; }
+        override void visit(PragmaDeclaration) { name = "PragmaDeclaration"; }
+        override void visit(ProtDeclaration) { name = "ProtDeclaration"; }
+        override void visit(ScopeDsymbol) { name = "ScopeDsymbol"; }
+        override void visit(SharedStaticCtorDeclaration) { name = "SharedStaticCtorDeclaration"; }
+        override void visit(SharedStaticDtorDeclaration) { name = "SharedStaticDtorDeclaration"; }
+        override void visit(StaticAssert) { name = "StaticAssert"; }
+        override void visit(StaticCtorDeclaration) { name = "StaticCtorDeclaration"; }
+        override void visit(StaticDtorDeclaration) { name = "StaticDtorDeclaration"; }
+        override void visit(StaticIfDeclaration) { name = "StaticIfDeclaration"; }
+        override void visit(StorageClassDeclaration) { name = "StorageClassDeclaration"; }
+        override void visit(StructDeclaration) { name = "StructDeclaration"; }
+        override void visit(SymbolDeclaration) { name = "SymbolDeclaration"; }
+        override void visit(TemplateDeclaration) { name = "TemplateDeclaration"; }
+        override void visit(TemplateInstance) { name = "TemplateInstance"; }
+        override void visit(TemplateMixin) { name = "TemplateMixin"; }
+        override void visit(ThisDeclaration) { name = "ThisDeclaration"; }
+        override void visit(TupleDeclaration) { name = "TupleDeclaration"; }
+        override void visit(TypeInfoArrayDeclaration) { name = "TypeInfoArrayDeclaration"; }
+        override void visit(TypeInfoAssociativeArrayDeclaration) { name = "TypeInfoAssociativeArrayDeclaration"; }
+        override void visit(TypeInfoClassDeclaration) { name = "TypeInfoClassDeclaration"; }
+        override void visit(TypeInfoConstDeclaration) { name = "TypeInfoConstDeclaration"; }
+        override void visit(TypeInfoDeclaration) { name = "TypeInfoDeclaration"; }
+        override void visit(TypeInfoDelegateDeclaration) { name = "TypeInfoDelegateDeclaration"; }
+        override void visit(TypeInfoEnumDeclaration) { name = "TypeInfoEnumDeclaration"; }
+        override void visit(TypeInfoFunctionDeclaration) { name = "TypeInfoFunctionDeclaration"; }
+        override void visit(TypeInfoInterfaceDeclaration) { name = "TypeInfoInterfaceDeclaration"; }
+        override void visit(TypeInfoInvariantDeclaration) { name = "TypeInfoInvariantDeclaration"; }
+        override void visit(TypeInfoPointerDeclaration) { name = "TypeInfoPointerDeclaration"; }
+        override void visit(TypeInfoSharedDeclaration) { name = "TypeInfoSharedDeclaration"; }
+        override void visit(TypeInfoStaticArrayDeclaration) { name = "TypeInfoStaticArrayDeclaration"; }
+        override void visit(TypeInfoStructDeclaration) { name = "TypeInfoStructDeclaration"; }
+        override void visit(TypeInfoTupleDeclaration) { name = "TypeInfoTupleDeclaration"; }
+        override void visit(TypeInfoVectorDeclaration) { name = "TypeInfoVectorDeclaration"; }
+        override void visit(TypeInfoWildDeclaration) { name = "TypeInfoWildDeclaration"; }
+        override void visit(UnionDeclaration) { name = "UnionDeclaration"; }
+        override void visit(UnitTestDeclaration) { name = "UnitTestDeclaration"; }
+        override void visit(UserAttributeDeclaration) { name = "UserAttributeDeclaration"; }
+        override void visit(VarDeclaration) { name = "VarDeclaration"; }
+        override void visit(VersionSymbol) { name = "VersionSymbol"; }
+        override void visit(WithScopeSymbol) { name = "WithScopeSymbol"; }
+        
+        // Type
+        override void visit(TypeAArray) { name = "TypeAArray"; }
+        override void visit(TypeArray) { name = "TypeArray"; }
+        override void visit(TypeBasic) { name = "TypeBasic"; }
+        override void visit(TypeClass) { name = "TypeClass"; }
+        override void visit(TypeDArray) { name = "TypeDArray"; }
+        override void visit(TypeDelegate) { name = "TypeDelegate"; }
+        override void visit(TypeEnum) { name = "TypeEnum"; }
+        override void visit(TypeError) { name = "TypeError"; }
+        override void visit(TypeFunction) { name = "TypeFunction"; }
+        override void visit(TypeIdentifier) { name = "TypeIdentifier"; }
+        override void visit(TypeInstance) { name = "TypeInstance"; }
+        override void visit(TypeNext) { name = "TypeNext"; }
+        override void visit(TypeNull) { name = "TypeNull"; }
+        override void visit(TypePointer) { name = "TypePointer"; }
+        override void visit(TypeQualified) { name = "TypeQualified"; }
+        override void visit(TypeReference) { name = "TypeReference"; }
+        override void visit(TypeReturn) { name = "TypeReturn"; }
+        override void visit(TypeSArray) { name = "TypeSArray"; }
+        override void visit(TypeSlice) { name = "TypeSlice"; }
+        override void visit(TypeStruct) { name = "TypeStruct"; }
+        override void visit(TypeTuple) { name = "TypeTuple"; }
+        override void visit(TypeTypeof) { name = "TypeTypeof"; }
+        override void visit(TypeVector) { name = "TypeVector"; }
+    }
 
+    extern (C++) final class Scopes: Visitor
+    {
+        import ddmd.dmodule;
+        alias visit = super.visit;
+        static auto get(Dsymbol s) {
+            scope visitor = new Scopes();
+            s.accept(visitor);
+            return visitor.scopes;
+        }
+        override void visit(Module e) { /* stop climbing symbols here */ }
+        override void visit(ScopeDsymbol e) { e.parent.accept(this); scopes~=e; }
+        override void visit(TemplateInstance e) { e.parent.accept(this); }
+        override void visit(Declaration e) { e.parent.accept(this); }
+        ScopeDsymbol[] scopes;
+    }
+    
+    extern (C++) final class Types: Visitor
+    {
+        import ddmd.dmodule;
+        alias visit = super.visit;
+        Appender ctx;
+        int indirections;
+        this(Appender ctx) {
+            this.ctx = ctx;
+        }
+        static void mangle(Type s, Appender ctx) {
+//             printf("%s: %s\n", Typename.get(s), s.toChars());
+            scope visitor = new Types(ctx);
+            s.accept(visitor);
+        }
+        override void visit(TypeBasic s)      { mangleTypeBasic(s); }
+        override void visit(TypeClass s)      { fail("TypeClass"); }
+        override void visit(TypeEnum s)       { fail("TypeEnum"); }
+        override void visit(TypeError s)      { fail("TypeError"); }
+        override void visit(TypeNext s)       { fail("TypeNext"); }
+        override void visit(TypeArray s)      { fail("TypeArray"); }
+        override void visit(TypeAArray s)     { fail("TypeAArray"); }
+        override void visit(TypeDArray s)     { fail("TypeDArray"); }
+        override void visit(TypeSArray s)     { fail("TypeSArray"); }
+        override void visit(TypeDelegate s)   { fail("TypeDelegate"); }
+        override void visit(TypeFunction s)   { mangleTypeFunction(s); }
+        override void visit(TypePointer s)    { mangleIndirection(s, 'P'); }
+        override void visit(TypeReference s)  { mangleIndirection(s, 'R'); }
+        override void visit(TypeSlice s)      { fail("TypeSlice"); }
+        override void visit(TypeNull s)       { fail("TypeNull"); }
+        override void visit(TypeQualified s)  { fail("TypeQualified "); }
+        override void visit(TypeIdentifier s) { fail("TypeIdentifier"); }
+        override void visit(TypeInstance s)   { fail("TypeInstance"); }
+        override void visit(TypeReturn s)     { fail("TypeReturn"); }
+        override void visit(TypeTypeof s)     { fail("TypeTypeof"); }
+        override void visit(TypeStruct s)     { mangleTypeStruct(s); }
+        override void visit(TypeTuple s)      { fail("TypeTuple"); }
+        override void visit(TypeVector s)     { fail("TypeVector"); }
+        
+        void fail(const(char)* type) {
+            ctx.add('.');
+            error(Loc(), "Internal Compiler Error: can't mangle type %s", type);
+        }
+        
+        extern(D):
+        static auto unConst(T)(T type) {
+            // Now mangling the non-const type.
+            const mod = type.mod & ~MODconst;
+            return cast(T)type.castMod(mod);
+        }
+        
+        void mangleConstness(Type type, void delegate() fun) {
+            if (type.isConst) {
+                ctx.substituteOrMangle(type, () {
+                    ctx.add('K');
+                    if (type.isTypeBasic) {
+                        fun();
+                    } else {
+                        ctx.substituteOrMangle(unConst(type), fun);
+                    }
+                });
+            } else {
+                ctx.substituteOrMangle(type, fun);
+            }
+        }
+        
+        void mangleTypeStruct(TypeStruct type) {
+            mangleConstness(type, () {
+                mangleAggegateDeclaration(type.sym, ctx);
+            });
+        }
+                
+        void mangleTypeFunction(TypeFunction type) {
+            mangleConstness(type, () {
+                ctx.add('F');
+                auto returnType = type.next;
+                if(type.isref) returnType = returnType.referenceTo();
+                Types.mangle(returnType, ctx);
+                mangleFunctionParameters(type, ctx);
+                ctx.add('E');
+            });
+        }
+
+        void mangleIndirection(TypeNext type, char mangleCode) {
+            mangleConstness(type, () {
+                ctx.add(mangleCode);
+                ++indirections;
+                type.next.accept(this);
+                --indirections;
+            });
+        }
+        
+        void mangleTypeBasic(TypeBasic type) {
+            auto getEncoding = (TypeBasic t) {
+                final switch (t.ty) {
+                    case Tvoid:        return "v";
+                    case Tint8:        return "a";
+                    case Tuns8:        return "h";
+                    case Tint16:       return "s";
+                    case Tuns16:       return "t";
+                    case Tint32:       return "i";
+                    case Tuns32:       return "j";
+                    case Tfloat32:     return "f";
+                    case Tint64:       return Target.c_longsize == 8 ? "l" : "x";
+                    case Tuns64:       return Target.c_longsize == 8 ? "m" : "y";
+                    case Tint128:      return "n";
+                    case Tuns128:      return "o";
+                    case Tfloat64:     return "d";
+                    case Tfloat80:     return Target.realislongdouble ? "e" : "g";
+                    case Tbool:        return "b";
+                    case Tchar:        return "c";
+                    case Twchar:       return "t"; // unsigned short
+                    case Tdchar:       return "w"; // wchar_t (UTF-32)
+                    case Timaginary32: return "Gf";
+                    case Timaginary64: return "Gd";
+                    case Timaginary80: return "Ge";
+                    case Tcomplex32:   return "Cf";
+                    case Tcomplex64:   return "Cd";
+                    case Tcomplex80:   return "Ce";
+                }
+            };
+            // We mangle the constness for pointer or reference to basic type
+            // but not for basic type alone.
+            // e.g. `void foo(const int)` is mangled as `void foo(int)`
+            if(type.isConst && indirections > 0) {
+                mangleConstness(type,() {
+                    ctx.add(getEncoding(type));
+                });
+            } else {
+                ctx.add(getEncoding(type));
+            }
+            
+        }
+    }
+    
+    import ddmd.identifier;
+    import ddmd.id;
+    import ddmd.aggregate;
+    
+    enum MangleAs { C, CPP }
+
+    final class Context {
+        extern(D):
+
+        void set(MangleAs value) {
+            mangleAs = value;
+        }
+        
+        void substituteOrMangle(Type type, void delegate() mangle) {
+            auto proxy = TypeProxy(type);
+            const canSubstitute = proxy.canSubstitute();
+            bool substitute(Type type) {
+                if (!canSubstitute) return false;
+                if (auto found = proxy in types) {
+                    add(*found);
+                    printf("substituting %s: %s with %.*s\n", Typename.get(type), type.toChars(), found.length, found.ptr);
+                    return true;
+                }
+                return false;
+            }
+            void addType(Type type) {
+                if (!canSubstitute) return;
+                if (proxy !in types) {
+                    string id = nextSubstitution();
+                    types[proxy] = id;
+                    printf("Adding %s: %.*s %s\n", proxy.type.deco, id.length, id.ptr, proxy.type.toChars());
+                }
+            }
+            if (!substitute(type)) {
+                mangle();
+                addType(type);
+            }
+        }
+        
+        void substituteOrMangle(Dsymbol symbol, void delegate() mangle) {
+            bool substitute(Dsymbol symbol) {
+                auto proxy = SymbolProxy(symbol);
+                const canSubstitute = proxy.canSubstitute();
+                printf("try substitute\n");
+                if (!canSubstitute) return false;
+                printf("can substitute, available keys\n");
+                foreach(key, value; symbols) {
+                    printf("%.*s:%.*s\n", key.name.length, key.name.ptr, value.length, value.ptr);
+                }
+                if (auto found = proxy in symbols) {
+                    add(*found);
+                    printf(">>>substituting %s: %s with %.*s\n", Typename.get(symbol), symbol.toChars(), found.length, found.ptr);
+                    return true;
+                }
+                return false;
+            }
+            void addSymbol(Dsymbol symbol) {
+                auto proxy = SymbolProxy(symbol);
+                const canSubstitute = proxy.canSubstitute();
+                if (!canSubstitute) return;
+                if (proxy !in symbols) {
+                    string id = nextSubstitution();
+                    symbols[proxy] = id;
+                    printf("Adding symbol: %.*s %s\n", id.length, id.ptr, proxy.symbol.toChars());
+                }
+            }
+            if (!substitute(symbol)) {
+                printf("did not substitute\n");
+                mangle();
+                addSymbol(symbol);
+            }
+        }
+
+        static struct TypeProxy {
+            Type type;
+                    
+            bool canSubstitute() {
+                assert((type.isTypeBasic && type.isConst) || !type.isTypeBasic);
+                return true;
+            }
+
+            size_t toHash() const nothrow @safe {
+                return cast(size_t)(type.deco); // using deco's address as hash.
+            }
+
+            bool opEquals(ref const TypeProxy other) const nothrow @safe {
+                const Type a = type;
+                const Type b = other.type;
+                assert(a && b);
+                return a is b || (a.deco is b.deco && a.deco !is null);
+            }
+        }
+        
+        static struct SymbolProxy {
+            Dsymbol symbol;
+            const(char)[] name;
+            size_t hash;
+            
+            this(Dsymbol symbol) {
+                this.symbol = symbol;
+                this.name = symbol.ident.toString();
+                this.hash = adler32(name);
+                printf("hash %X '%.*s'\n", hash, name.length, name.ptr);
+            }
+                    
+            bool canSubstitute() {
+                return !symbol.isDeclaration;
+            }
+
+            size_t toHash() const @safe pure nothrow {
+                return hash;
+            }
+
+            bool opEquals(ref const SymbolProxy other) const @safe pure nothrow {
+                return name[] == other.name[];
+            }
+        }
+
+        private static void writeBase36(size_t i, ref string output) {
+            if (i < 10) {
+                output ~= cast(char)(i + '0');
+            } else if (i < 36) {
+                output ~= cast(char)(i - 10 + 'A');
+            } else {
+                writeBase36(i / 36, output);
+                i %= 36;
+            }
+        }
+        
+        private static uint adler32(const(void)[] blob) nothrow @safe {
+            uint s1 = 1;
+            uint s2 = 0;
+            foreach (b; cast(const(ubyte)[])blob) {
+                s1 = (s1 + b) % 65521;
+                s2 = (s2 + s1) % 65521;
+            }     
+            return (s2 << 16) | s1;
+        }
+        
+        private string nextSubstitution() {
+            string getEncoding(char type, size_t i) {
+                string output;
+                output ~= type;
+                if (i > 0) writeBase36(i - 1, output);
+                output ~= '_';
+                return output;
+            }
+            return getEncoding('S', symbols.length + types.length);
+        }
+
+        MangleAs mangleAs;
+        string[TypeProxy] types;
+        string[SymbolProxy] symbols;
+    }
+        
+    final class Appender {
+        Context ctx;
+        alias ctx this;
+        this(Context ctx) { this.ctx = ctx; }
+        
+        void add(Identifier ident) {
+            auto name = cast(string)ident.toString();
+            if (mangleAs == MangleAs.CPP) writeBase36(name.length, buffer);
+            add(name);
+        }
+        
+        void add(string s) {
+            buffer ~= s;
+            printf("%.*s\n", s.length, s.ptr);
+        }
+        
+        void add(char c) {
+            buffer ~= c;
+            printf("%c\n", c);
+        }
+  
+        auto fork() {
+            auto ctx = new Context();
+            ctx.mangleAs = mangleAs;
+            ctx.types = types;
+            ctx.symbols = symbols;
+            return ctx;
+        }
+        
+        void merge(ref const Context ctx, bool enclosed) {
+            if(enclosed) add('N');
+            add(ctx.buffer);
+            if(enclosed) add('E');
+        }
+        
+        auto finish() {
+            buffer ~= '\0';
+            printf("finish: %s\n", buffer.ptr);
+            return cast(const(char)*)buffer;
+        }
+        
+        string buffer;
+    }
+
+    static void mangleTemplateInstance(TemplateInstance s, Context ctx) {
+        if(s is null) return;
+        ctx.add('I');
+        auto arguments = s.tiargs;
+        assert(arguments);
+        if (arguments.dim) {
+            foreach (argument ; *arguments) {
+                Types.mangle(cast(Type)argument, ctx);
+            }
+        } else {
+            Types.mangle(Type.tvoid, ctx);
+        }
+        ctx.add('E');
+    }
+    
+    static bool mangleAbbreviation(ref ScopeDsymbol[] scopes, Context ctx) {
+        bool isTemplateId(Dsymbol sym, Identifier id) {
+            if(sym is null) return false;
+            auto templateInstance = isTemplateInstance(sym);
+            return templateInstance && templateInstance.name is id;
+        }
+        bool isStd(Dsymbol sym) {
+            return sym && sym.isNspace && sym.ident is Id.std;
+        }    
+        ScopeDsymbol next() {
+            return scopes.length ? scopes[0] : null;
+        }
+        void pop() {
+            if(scopes.length) scopes = scopes[1..$];
+        }
+        ScopeDsymbol first = next();
+        if(isStd(first)) {
+            pop();
+            ScopeDsymbol second = next();
+            if(isTemplateId(second, Id.basic_string)) {
+                pop();
+                ctx.add("Ss");
+            } else if(isTemplateId(second, Id.basic_iostream)) {
+                pop();
+                ctx.add("Sd");
+            } else if(isTemplateId(second, Id.basic_ostream)) {
+                pop();
+                ctx.add("So");
+            } else if(isTemplateId(second, Id.basic_istream)) {
+                pop();
+                ctx.add("Si");
+            } else if(isTemplateId(second, Id.allocator)) {
+                pop();
+                ctx.add("Sa");
+                mangleTemplateInstance(isTemplateInstance(second), ctx);
+            } else {
+                ctx.add("St");
+            }
+            return false;
+        }
+        return scopes.length > 0;
+    }
+    
+    static void mangleSymbol(Dsymbol sym, Context ctx) {
+        ctx.substituteOrMangle(sym, () {
+            ctx.add(sym.ident);
+            auto templateInstance = isTemplateInstance(sym);
+            if(templateInstance) mangleTemplateInstance(templateInstance, ctx);
+        });
+    }
+
+    static void mangleSymbols(ScopeDsymbol[] scopes, Context ctx, Declaration decl) {
+        scope new_ctx = ctx.fork();
+        if(decl && decl.type.isConst) {
+            if(decl.isVarDeclaration) new_ctx.add('L');
+            if(decl.isFuncDeclaration) new_ctx.add('K');
+        }
+        const enclosed = mangleAbbreviation(scopes, new_ctx);
+        foreach(s; scopes) mangleSymbol(s, new_ctx);
+        if(decl) mangleSymbol(decl, new_ctx);
+//         auto enclosed = scopes.length > 0;
+//         if(abbreviation != "" && decl)
+//             enclosed = true;
+//         if(abbreviation == "St")
+//             enclosed = false;
+        ctx.merge(new_ctx, enclosed);
+    }
+    
+    static void mangleParameter(Parameter parameter, Context ctx) {
+        const isRef = parameter.storageClass & STCref;
+        auto type = parameter.type;
+        if(isRef) type = type.referenceTo();
+        Types.mangle(type, ctx);
+    }
+    
+    static void mangleFunctionParameters(TypeFunction typeFun, Context ctx) {
+        assert(typeFun);
+        auto parameters = typeFun.parameters;
+        assert(parameters);
+        if( parameters.dim) {
+            foreach(parameter; *parameters) {
+                mangleParameter(parameter, ctx);
+            }
+        } else {
+            Types.mangle(Type.tvoid, ctx);
+        }
+    }
+                
+    static TemplateInstance isTemplateInstance(Dsymbol decl) {
+        if(!decl.parent) return null;
+        return decl.parent.isTemplateInstance;
+    }
+        
+    static void mangleAggegateDeclaration(AggregateDeclaration decl, Context ctx) {
+        auto scopes = Scopes.get(decl);
+        mangleSymbols(scopes, ctx, null);
+    }
+    
+    static void mangleDeclaration(Declaration decl, Context ctx) {
+        auto scopes = Scopes.get(decl);
+        const nested = scopes.length > 0;
+        const mangleAsCpp = decl.isConst || nested || decl.isFuncDeclaration;
+        if(mangleAsCpp) ctx.add("_Z");
+        ctx.set(mangleAsCpp ? MangleAs.CPP : MangleAs.C);
+        mangleSymbols(scopes, ctx, decl);
+        auto funDecl = decl.isFuncDeclaration;
+        if(funDecl) {
+            if(isTemplateInstance(decl)) {
+                auto funType = cast(TypeFunction)funDecl.type;
+                assert(funType);
+                auto templateReturnType = funType.next;
+                assert(templateReturnType);
+                Types.mangle(cast(Type)templateReturnType, ctx);
+            }
+            mangleFunctionParameters(cast(TypeFunction)funDecl.type, ctx);
+        }
+    }
+    
     extern (C++) const(char)* toCppMangle(Dsymbol s)
     {
-        //printf("toCppMangle(%s)\n", s.toChars());
-        scope CppMangleVisitor v = new CppMangleVisitor();
-        return v.mangleOf(s);
+//         printf("toCppMangle(%s)\n", s.toChars());
+        printf("######################################################\n");
+        scope ctx = new Context;
+        if(s.isVarDeclaration || s.isFuncDeclaration)
+            mangleDeclaration(s.isDeclaration, ctx);
+        else
+            error(Loc(), "Internal Compiler Error: unsupported type\n");
+//         scope CppMangleVisitor v = new CppMangleVisitor();
+//         return v.mangleOf(s);
+        return ctx.finish();
     }
 
     extern (C++) const(char)* cppTypeInfoMangle(Dsymbol s)
