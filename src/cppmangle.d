@@ -1057,7 +1057,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
         override void visit(Module e) { /* stop climbing symbols here */ }
         override void visit(ScopeDsymbol e) { e.parent.accept(this); scopes~=e; }
-        override void visit(TemplateInstance e) { e.parent.accept(this); }
         override void visit(Declaration e) { e.parent.accept(this); }
         ScopeDsymbol[] scopes;
     }
@@ -1231,11 +1230,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             this.symbol = symbol;
             this.name = symbol.ident.toString();
             this.hash = adler32(name);
-            printf("hash %X '%.*s'\n", hash, name.length, name.ptr);
-        }
-                
-        bool canSubstitute() {
-            return !symbol.isDeclaration;
         }
 
         size_t toHash() const @safe pure nothrow {
@@ -1329,19 +1323,18 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
 
         void substituteOrMangle(Type type, void delegate() mangle) {
+            // This function accepts basic types only if const.
+            assert((type.isTypeBasic && type.isConst) || !type.isTypeBasic);
             auto proxy = TypeProxy(type);
-            const canSubstitute = proxy.canSubstitute();
             bool substitute(Type type) {
-                if (!canSubstitute) return false;
                 if (auto found = proxy in ctx.types) {
                     add(*found);
-                    printf("substituting %s: %s with %.*s\n", Typename.get(type), type.toChars(), found.length, found.ptr);
+                    printf("Substituting type %s: %s with %.*s\n", Typename.get(type), type.toChars(), found.length, found.ptr);
                     return true;
                 }
                 return false;
             }
             void addType(Type type) {
-                if (!canSubstitute) return;
                 if (proxy !in ctx.types) {
                     string id = ctx.nextSubstitution();
                     ctx.types[proxy] = id;
@@ -1357,29 +1350,27 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         void substituteOrMangle(Dsymbol symbol, void delegate() mangle) {
             bool substitute(Dsymbol symbol) {
                 auto proxy = SymbolProxy(symbol);
-                const canSubstitute = proxy.canSubstitute();
-                if (!canSubstitute) return false;
                 foreach(key, value; ctx.symbols) {
                     printf("%.*s:%.*s\n", key.name.length, key.name.ptr, value.length, value.ptr);
                 }
                 if (auto found = proxy in ctx.symbols) {
                     add(*found);
-                    printf(">>>substituting %s: %s with %.*s\n", Typename.get(symbol), symbol.toChars(), found.length, found.ptr);
+                    printf("Substituting symbol %s: %s with %.*s\n", Typename.get(symbol), symbol.toChars(), found.length, found.ptr);
                     return true;
                 }
                 return false;
             }
             void addSymbol(Dsymbol symbol) {
                 auto proxy = SymbolProxy(symbol);
-                const canSubstitute = proxy.canSubstitute();
-                if (!canSubstitute) return;
                 if (proxy !in ctx.symbols) {
                     string id = ctx.nextSubstitution();
                     ctx.symbols[proxy] = id;
                     printf("Adding symbol: %.*s %s\n", id.length, id.ptr, proxy.symbol.toChars());
                 }
             }
-            if (!substitute(symbol)) {
+            if (symbol.isDeclaration) {
+                mangle();
+            } else if (!substitute(symbol)) {
                 mangle();
                 addSymbol(symbol);
             }
@@ -1404,9 +1395,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     }
     
     static bool mangleAbbreviation(ref ScopeDsymbol[] scopes, Appender ctx) {
-        bool isTemplateId(Dsymbol sym, Identifier id) {
+        bool isTemplatedId(Dsymbol sym, Identifier id) {
             if(sym is null) return false;
-            auto templateInstance = isTemplateInstance(sym);
+            auto templateInstance = getParentTemplateInstance(sym);
             return templateInstance && templateInstance.name is id;
         }
         bool isStd(Dsymbol sym) {
@@ -1422,22 +1413,22 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         if(isStd(first)) {
             pop();
             ScopeDsymbol second = next();
-            if(isTemplateId(second, Id.basic_string)) {
+            if(isTemplatedId(second, Id.basic_string)) {
                 pop();
                 ctx.add("Ss");
-            } else if(isTemplateId(second, Id.basic_iostream)) {
+            } else if(isTemplatedId(second, Id.basic_iostream)) {
                 pop();
                 ctx.add("Sd");
-            } else if(isTemplateId(second, Id.basic_ostream)) {
+            } else if(isTemplatedId(second, Id.basic_ostream)) {
                 pop();
                 ctx.add("So");
-            } else if(isTemplateId(second, Id.basic_istream)) {
+            } else if(isTemplatedId(second, Id.basic_istream)) {
                 pop();
                 ctx.add("Si");
-            } else if(isTemplateId(second, Id.allocator)) {
+            } else if(isTemplatedId(second, Id.allocator)) {
                 pop();
                 ctx.add("Sa");
-                mangleTemplateInstance(isTemplateInstance(second), ctx);
+                mangleTemplateInstance(getParentTemplateInstance(second), ctx);
             } else {
                 ctx.add("St");
             }
@@ -1449,8 +1440,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     static void mangleSymbol(Dsymbol sym, Appender ctx) {
         ctx.substituteOrMangle(sym, () {
             ctx.add(sym.ident);
-            auto templateInstance = isTemplateInstance(sym);
-            if(templateInstance) mangleTemplateInstance(templateInstance, ctx);
+            mangleTemplateInstance(getParentTemplateInstance(sym), ctx);
         });
     }
 
@@ -1491,7 +1481,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
     }
                 
-    static TemplateInstance isTemplateInstance(Dsymbol decl) {
+    static TemplateInstance getParentTemplateInstance(Dsymbol decl) {
         if(!decl.parent) return null;
         return decl.parent.isTemplateInstance;
     }
@@ -1510,7 +1500,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         mangleSymbols(scopes, ctx, decl);
         auto funDecl = decl.isFuncDeclaration;
         if(funDecl) {
-            if(isTemplateInstance(decl)) {
+            if(getParentTemplateInstance(decl)) {
                 auto funType = cast(TypeFunction)funDecl.type;
                 assert(funType);
                 auto templateReturnType = funType.next;
