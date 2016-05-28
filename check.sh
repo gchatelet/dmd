@@ -1,8 +1,7 @@
 #!/bin/bash
-set -e
 clear
-make -f posix.mak -j9
-for file in `find test/mangling -name '*.d' -type f`; do
+make -f posix.mak -j9  || { echo 'compilation failed' ; exit 1; }
+for file in `ls test/mangling/*.d`; do
     echo "######################################################"
     echo ">>>>>" $file "<<<<<"
     ./src/dmd -main $file

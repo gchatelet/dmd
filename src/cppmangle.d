@@ -920,11 +920,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return buf.extractString();
         }
     }
-    
+
     ///////////////////////////////////////////////////////////////////////////
     // New implementation.
     ///////////////////////////////////////////////////////////////////////////
-    
+
     extern (C++) final class Typename : Visitor
     {
         import ddmd.aggregate;
@@ -1060,7 +1060,49 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         override void visit(Declaration e) { e.parent.accept(this); }
         ScopeDsymbol[] scopes;
     }
-    
+
+    extern (C++) final class Nesting: Visitor
+    {
+        import ddmd.dmodule;
+        alias visit = super.visit;
+        static auto get(Dsymbol s) {
+            printf("Nesting visit %s %s\n", Typename.get(s), s.toChars());
+            scope visitor = new Nesting();
+            s.accept(visitor);
+            return visitor.isNested();
+        }
+        override void visit(Module e) {
+            /* stop climbing symbols here */
+        }
+        override void visit(Declaration e) {
+            declaration = e;
+            e.parent.accept(this);
+        }
+        override void visit(ScopeDsymbol e) {
+            ++scopes;
+            if(e.isNspace && e.ident is Id.std) {
+                isStd = true;
+            }
+            e.parent.accept(this);
+        }
+        override void visit(TemplateInstance e) {
+            e.parent.accept(this);
+        }
+        bool isNested() const {
+            printf("scopes: %d, isStd: %d, isDeclaration %x\n", scopes, isStd, declaration);
+            if(scopes == 1 && isStd) {
+                return false;
+            }
+            if(declaration && scopes > 0) {
+                return true;
+            }
+            return scopes > 1 && !isStd;
+        }
+        bool isStd;
+        size_t scopes;
+        Declaration declaration;
+    }
+
     extern (C++) final class Types: Visitor
     {
         import ddmd.dmodule;
@@ -1194,11 +1236,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             
         }
     }
-    
+
     import ddmd.identifier;
     import ddmd.id;
     import ddmd.aggregate;
-    
+
     enum MangleAs { C, CPP }
 
     static struct TypeProxy {
@@ -1220,7 +1262,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return a is b || (a.deco is b.deco && a.deco !is null);
         }
     }
-    
+
     static struct SymbolProxy {
         Dsymbol symbol;
         const(char)[] name;
@@ -1228,7 +1270,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         
         this(Dsymbol symbol) {
             this.symbol = symbol;
-            this.name = symbol.ident.toString();
+            const chars = symbol.toChars();
+            this.name = chars[0..strlen(chars)];
             this.hash = adler32(name);
         }
 
@@ -1250,7 +1293,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
            return (s2 << 16) | s1;
        }
     }
- 
+
     final class Context {
         extern(D):
 
@@ -1284,38 +1327,38 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         string[TypeProxy] types;
         string[SymbolProxy] symbols;
     }
-        
+
     final class Appender {
         Context ctx;
         alias ctx this;
         this(Context ctx) { this.ctx = ctx; }
-        
+
         void add(Identifier ident) {
             auto name = cast(string)ident.toString();
             if (mangleAs == MangleAs.CPP) writeBase36(name.length, buffer);
             add(name);
         }
-        
+
         void add(string s) {
             buffer ~= s;
             printf("%.*s\n", s.length, s.ptr);
         }
-        
+
         void add(char c) {
             buffer ~= c;
             printf("%c\n", c);
         }
-  
+
         auto fork() {
             return new Appender(ctx);
         }
-        
+
         void merge(ref const Appender appender, bool enclosed) {
             if(enclosed) add('N');
             add(appender.buffer);
             if(enclosed) add('E');
         }
-        
+
         auto finish() {
             buffer ~= '\0';
             printf("finish: %s\n", buffer.ptr);
@@ -1346,42 +1389,33 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 addType(type);
             }
         }
-        
-        void substituteOrMangle(Dsymbol symbol, void delegate() mangle) {
-            bool substitute(Dsymbol symbol) {
-                auto proxy = SymbolProxy(symbol);
-                foreach(key, value; ctx.symbols) {
-                    printf("%.*s:%.*s\n", key.name.length, key.name.ptr, value.length, value.ptr);
-                }
-                if (auto found = proxy in ctx.symbols) {
-                    add(*found);
-                    printf("Substituting symbol %s: %s with %.*s\n", Typename.get(symbol), symbol.toChars(), found.length, found.ptr);
-                    return true;
-                }
-                return false;
+
+        string* canSubstitute(Dsymbol symbol) {
+            return SymbolProxy(symbol) in ctx.symbols;
+        }
+
+        void addSymbol(Dsymbol symbol) {
+            if(isInTemplateInstance) {
+                return;
             }
-            void addSymbol(Dsymbol symbol) {
-                auto proxy = SymbolProxy(symbol);
-                if (proxy !in ctx.symbols) {
-                    string id = ctx.nextSubstitution();
-                    ctx.symbols[proxy] = id;
-                    printf("Adding symbol: %.*s %s\n", id.length, id.ptr, proxy.symbol.toChars());
-                }
-            }
-            if (symbol.isDeclaration) {
-                mangle();
-            } else if (!substitute(symbol)) {
-                mangle();
-                addSymbol(symbol);
+            auto proxy = SymbolProxy(symbol);
+            if (proxy !in ctx.symbols) {
+                string id = ctx.nextSubstitution();
+                ctx.symbols[proxy] = id;
+                printf("Adding %s %s as %.*s\n", Typename.get(symbol), symbol.toChars(), id.length, id.ptr);
             }
         }
 
         string buffer;
+        size_t isInTemplateInstance;
     }
 
     static void mangleTemplateInstance(TemplateInstance s, Appender ctx) {
         if(s is null) return;
+        ctx.isInTemplateInstance++;
+        scope(exit) ctx.isInTemplateInstance--;
         ctx.add('I');
+        scope(exit) ctx.add('E');
         auto arguments = s.tiargs;
         assert(arguments);
         if (arguments.dim) {
@@ -1391,18 +1425,18 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         } else {
             Types.mangle(Type.tvoid, ctx);
         }
-        ctx.add('E');
     }
-    
-    static bool mangleAbbreviation(ref ScopeDsymbol[] scopes, Appender ctx) {
+
+    enum Abbreviation { NONE, STD, OTHER }
+    static Abbreviation abbreviate(ref ScopeDsymbol[] scopes, Appender ctx) {
         bool isTemplatedId(Dsymbol sym, Identifier id) {
             if(sym is null) return false;
-            auto templateInstance = getParentTemplateInstance(sym);
+            auto templateInstance = sym.isTemplateInstance;
             return templateInstance && templateInstance.name is id;
         }
         bool isStd(Dsymbol sym) {
             return sym && sym.isNspace && sym.ident is Id.std;
-        }    
+        }
         ScopeDsymbol next() {
             return scopes.length ? scopes[0] : null;
         }
@@ -1414,60 +1448,71 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             pop();
             ScopeDsymbol second = next();
             if(isTemplatedId(second, Id.basic_string)) {
-                pop();
+                pop();pop();
                 ctx.add("Ss");
             } else if(isTemplatedId(second, Id.basic_iostream)) {
-                pop();
+                pop();pop();
                 ctx.add("Sd");
             } else if(isTemplatedId(second, Id.basic_ostream)) {
-                pop();
+                pop();pop();
                 ctx.add("So");
             } else if(isTemplatedId(second, Id.basic_istream)) {
-                pop();
+                pop();pop();
                 ctx.add("Si");
             } else if(isTemplatedId(second, Id.allocator)) {
-                pop();
+                pop();pop();
                 ctx.add("Sa");
-                mangleTemplateInstance(getParentTemplateInstance(second), ctx);
+                mangleTemplateInstance(second.isTemplateInstance, ctx);
             } else {
                 ctx.add("St");
+                return Abbreviation.STD;
             }
-            return false;
+            return Abbreviation.OTHER;
         }
-        return scopes.length > 0;
-    }
-    
-    static void mangleSymbol(Dsymbol sym, Appender ctx) {
-        ctx.substituteOrMangle(sym, () {
-            ctx.add(sym.ident);
-            mangleTemplateInstance(getParentTemplateInstance(sym), ctx);
-        });
+        return Abbreviation.NONE;
     }
 
-    static void mangleSymbols(ScopeDsymbol[] scopes, Appender ctx, Declaration decl) {
-        scope new_ctx = ctx.fork();
+    static void mangleSymbols(ScopeDsymbol[] scopes, Appender ctx_, Declaration decl) {
+        Dsymbol last = decl ? decl : scopes[$-1];
+        scope new_ctx = ctx_.fork();
         if(decl && decl.type.isConst) {
             if(decl.isVarDeclaration) new_ctx.add('L');
             if(decl.isFuncDeclaration) new_ctx.add('K');
         }
-        const enclosed = mangleAbbreviation(scopes, new_ctx);
-        foreach(s; scopes) mangleSymbol(s, new_ctx);
-        if(decl) mangleSymbol(decl, new_ctx);
-//         auto enclosed = scopes.length > 0;
-//         if(abbreviation != "" && decl)
-//             enclosed = true;
-//         if(abbreviation == "St")
-//             enclosed = false;
-        ctx.merge(new_ctx, enclosed);
+        abbreviate(scopes, new_ctx);
+        // Substitute if possible.
+        foreach_reverse(i, s; scopes) {
+            if(string* found = new_ctx.canSubstitute(s)) {
+                new_ctx.add(*found);
+                scopes = scopes[i + 1 .. $];
+                break;
+            }
+        }
+        // Encode the rest.
+        foreach(symbol; scopes) {
+            if(!symbol.isTemplateInstance) {
+                new_ctx.add(symbol.ident);
+            }
+            auto parentTemplateInstance = getParentTemplateInstance(symbol);
+            if(parentTemplateInstance) {
+                mangleTemplateInstance(parentTemplateInstance , new_ctx);
+            }
+            new_ctx.addSymbol(symbol);
+        }
+        // Encode declaration.
+        if(decl) {
+            new_ctx.add(decl.ident);
+        }
+        ctx_.merge(new_ctx, Nesting.get(last));
     }
-    
+
     static void mangleParameter(Parameter parameter, Appender ctx) {
         const isRef = parameter.storageClass & STCref;
         auto type = parameter.type;
         if(isRef) type = type.referenceTo();
         Types.mangle(type, ctx);
     }
-    
+
     static void mangleFunctionParameters(TypeFunction typeFun, Appender ctx) {
         assert(typeFun);
         auto parameters = typeFun.parameters;
@@ -1480,17 +1525,17 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             Types.mangle(Type.tvoid, ctx);
         }
     }
-                
+
     static TemplateInstance getParentTemplateInstance(Dsymbol decl) {
         if(!decl.parent) return null;
         return decl.parent.isTemplateInstance;
     }
-        
+
     static void mangleAggegateDeclaration(AggregateDeclaration decl, Appender ctx) {
         auto scopes = Scopes.get(decl);
         mangleSymbols(scopes, ctx, null);
     }
-    
+
     static void mangleDeclaration(Declaration decl, Appender ctx) {
         auto scopes = Scopes.get(decl);
         const nested = scopes.length > 0;
@@ -1510,7 +1555,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             mangleFunctionParameters(cast(TypeFunction)funDecl.type, ctx);
         }
     }
-    
+
     extern (C++) const(char)* toCppMangle(Dsymbol s)
     {
 //         printf("toCppMangle(%s)\n", s.toChars());
