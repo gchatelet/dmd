@@ -99,7 +99,7 @@ void test3()
     assert(i == 8);
 }
 
-static assert (callE.mangleof == "_Z5callEP1E");
+//// static assert (callE.mangleof == "_Z5callEP1E");
 static assert (E.bar.mangleof == "_ZN1E3barEiii");
 static assert (F.bar.mangleof == "_ZN1F3barEiii");
 
