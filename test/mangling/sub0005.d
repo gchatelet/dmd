@@ -5,4 +5,4 @@ struct basic_ostream(T, TRAITS = char_traits!T) {
     void foo() {}
 }
 
-static assert(basic_ostream!char.foo.mangleof == "_ZSo3foov");
+static assert(basic_ostream!char.foo.mangleof == "_ZNSo3fooEv");

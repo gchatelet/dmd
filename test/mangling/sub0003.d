@@ -6,4 +6,4 @@ struct basic_string(T, TRAITS = char_traits!T, ALLOC = allocator!T) {
     void foo() {}
 }
 
-static assert(basic_string!char.foo.mangleof == "_ZSs3foov");
+static assert(basic_string!char.foo.mangleof == "_ZNSs3fooEv");

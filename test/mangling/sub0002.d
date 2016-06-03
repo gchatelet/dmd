@@ -1,7 +1,8 @@
 extern(C++, std):
 
-struct basic_string {
-    void foo() {}
+struct allocator(T) {}
+struct char_traits(CharT) {}
+struct basic_string(T, TRAITS = char_traits!T, ALLOC = allocator!T) {
 }
 
-static assert(basic_string.mangleof == "_ZSb3foov");
+static assert(std.basic_string.mangleof == "_ZSb3foov");

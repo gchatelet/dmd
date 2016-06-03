@@ -129,11 +129,24 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         assert(symbol.isScope);
         if (symbol.isStd) {
             output.append("St");
+        } else if (symbol.isAllocator) {
+            output.append("Sa");
+            if(auto tmpl = symbol.tmpl) mangleTemplateInstance(tmpl, output);
+        } else if (symbol.isBasicStreamInstance!"i") {
+            output.append("Si");
+        } else if (symbol.isBasicStreamInstance!"o") {
+            output.append("So");
+        } else if (symbol.isBasicStreamInstance!"io") {
+            output.append("Sd");
+        } else if (symbol.isBasicStringInstance) {
+            output.append("Ss");
+        } else if (symbol.isBasicString) {
+            output.append("Sb");
+            if(auto tmpl = symbol.tmpl) mangleTemplateInstance(tmpl, output);
         } else {
             mangleHierarchy(symbol.parent, output);
             output.appendName(symbol.name);
-            if(auto tmpl = symbol.tmpl)
-                mangleTemplateInstance(tmpl, output);
+            if(auto tmpl = symbol.tmpl) mangleTemplateInstance(tmpl, output);
         }
     }
 
@@ -257,6 +270,13 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         override typeof(this) isTemplateInstance() { return this; }
         override void toString(ref char[] buffer) { assert(0); }
+
+        bool matchesSubstitutionTemplateArguments(size_t expected_arguments) {
+            assert(expected_arguments > 0);
+            return template_args.length == expected_arguments
+                    && template_args[0].isSymbol
+                    && template_args[0].isSymbol.isCharType;
+        }
     }
 
     final class CppSymbol: CppNode {
@@ -297,6 +317,10 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             }
         }
 
+        bool isCharType() {
+            return kind == Kind.Basic && name == "c";
+        }
+
         bool isValueType () {
             return kind == Kind.Struct || kind == Kind.Class || kind == Kind.Basic;
         }
@@ -306,11 +330,32 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
 
         bool isScope() {
-            return kind == Kind.Struct || kind == Kind.Class || kind == Kind.Namespace;
+            return isAggregate() || kind == Kind.Namespace;
+        }
+
+        bool isAggregate() {
+            return kind == Kind.Struct || kind == Kind.Class;
         }
 
         bool isStd() {
             return kind == Kind.Namespace && name == "std" && parent is null;
+        }
+
+        bool isAllocator() {
+            return isAggregate() && name == "allocator" && parent && parent.isStd();
+        }
+
+        bool isBasicString() {
+            return isAggregate() && name == "basic_string" && parent && parent.isStd();
+        }
+
+        bool isBasicStringInstance() {
+            return isBasicString && tmpl && tmpl.matchesSubstitutionTemplateArguments(3);
+        }
+
+        bool isBasicStreamInstance(string type)() {
+            static assert(type == "i" || type == "o" || type == "io");
+            return isAggregate() && name == "basic_" ~ type ~ "stream" && parent && parent.isStd() && tmpl && tmpl.matchesSubstitutionTemplateArguments(2);
         }
     }
 

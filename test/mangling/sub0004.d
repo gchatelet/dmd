@@ -5,4 +5,4 @@ struct basic_istream(T, TRAITS = char_traits!T) {
     void foo() {}
 }
 
-static assert(basic_istream!char.foo.mangleof == "_ZSi3foov");
+static assert(basic_istream!char.foo.mangleof == "_ZNSi3fooEv");

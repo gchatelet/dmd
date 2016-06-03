@@ -1,7 +1,7 @@
 extern(C++, std):
 
-struct allocator {
+struct allocator(T) {
     void foo() {}
 }
 
-static assert(allocator.foo.mangleof == "_ZSa3foov");
+static assert(allocator!int.foo.mangleof == "_ZNSaIiE3fooEv");
