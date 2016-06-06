@@ -187,6 +187,16 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
     }
 
+    void mangleFunction(CppSymbol symbol, OutputBuffer output) {
+        assert(symbol.kind == CppSymbol.Kind.Function);
+        output.append('F');
+        mangleNode(symbol.function_return_type, output);
+        foreach(arg; symbol.function_args) {
+            mangleNode(arg, output);
+        }
+        output.append('E');
+    }
+
     void mangleSymbol(CppSymbol symbol, OutputBuffer output) {
         assert(symbol);
         final switch(symbol.kind) {
@@ -203,7 +213,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 output.merge(buffer, isEnclosed(symbol));
                 break;
             case CppSymbol.Kind.Function:
-                output.append("^O^");
+                scope OutputBuffer buffer = output.fork();
+                mangleFunction(symbol, buffer);
+                output.merge(buffer, isEnclosed(symbol));
                 break;
             case CppSymbol.Kind.VarDeclaration:
             case CppSymbol.Kind.FuncDeclaration:
@@ -223,9 +235,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
         output.append(getEncoding());
         return indirection.next;
-    }
-
-    class CppManglerContext {
     }
 
     class CppNode {
