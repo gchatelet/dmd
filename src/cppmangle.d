@@ -43,10 +43,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     // Newer implementation.
     //-------------------------------------------------------------------------
 
-    class OutputBufferContext {
-        bool mangleAsCpp;
-    }
-
     class OutputBuffer {
         private static void writeBase36(size_t i, ref const(char)[] output) {
             if (i >= 36) {
@@ -72,23 +68,15 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 assert(0);
         }
 
-        this(OutputBufferContext context) { this.ctx = context; }
         void append(char c) { buffer ~= c; }
         void append(const(char)[] other) { buffer ~= other; }
-        OutputBuffer fork() { return new OutputBuffer(ctx); }
-        void merge(in OutputBuffer other, bool isEnclosed) {
-            if (isEnclosed) append('N');
-            append(other.buffer);
-            if (isEnclosed) append('E');
-        }
-        void appendName(string name) {
-            if(ctx.mangleAsCpp)
-                writeBase10(name.length, buffer);
+        void appendSourceName(string name) {
+            if(mangleAsCpp) writeBase10(name.length, buffer);
             append(name);
         }
         const(char)* finish() { append('\0'); return buffer.ptr; }
         const(char)[] buffer;
-        OutputBufferContext ctx;
+        bool mangleAsCpp;
     }
 
     bool isNested(CppNode node) {
@@ -103,7 +91,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         CppIndirection isIndirection() { return null; }
         CppSymbol isSymbol() { return null; }
 
-        abstract void mangle(OutputBuffer output);
+        abstract void mangle(scope OutputBuffer output);
         abstract void toString(ref char[] buffer);
     }
 
@@ -133,7 +121,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             }
         }
 
-        override void mangle(OutputBuffer output) {
+        override void mangle(scope OutputBuffer output) {
             output.append(kind);
             assert(next);
             next.mangle(output);
@@ -155,7 +143,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                     && template_args[0].isSymbol.isCharType;
         }
 
-        override void mangle(OutputBuffer output) {
+        override void mangle(scope OutputBuffer output) {
             output.append('I');
             foreach (argument ; template_args) {
                 argument.mangle(output);
@@ -170,7 +158,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         Kind kind;
         CppSymbol parent;
         CppNode declaration_type;
-        bool declaration_const;
         CppTemplateInstance tmpl;
         CppNode function_return_type;
         CppNode[] function_args;
@@ -214,12 +201,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return kind == Kind.VarDeclaration || kind == Kind.FuncDeclaration;
         }
 
-        bool isScope() {
-            return isAggregate() || kind == Kind.Namespace;
-        }
-
         bool isAggregate() {
             return kind == Kind.Struct || kind == Kind.Class;
+        }
+
+        bool isScope() {
+            return isAggregate() || kind == Kind.Namespace;
         }
 
         bool isStd() {
@@ -243,31 +230,36 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return isAggregate() && name == "basic_" ~ type ~ "stream" && parent && parent.isStd() && tmpl && tmpl.matchesSubstitutionTemplateArguments(2);
         }
 
-        override void mangle(OutputBuffer output) {
+        override void mangle(scope OutputBuffer output) {
             final switch(kind) {
                 case Kind.Basic:
                     output.append(name);
                     break;
                 case Kind.Namespace:
-                    output.appendName(name);
+                    output.appendSourceName(name);
                     break;
                 case Kind.Struct:
                 case Kind.Class:
-                    scope OutputBuffer buffer = output.fork();
-                    mangleHierarchy(buffer);
-                    output.merge(buffer, isEnclosed());
+                    const enclosed = isEnclosed();
+                    if(enclosed) output.append('N');
+                    mangleHierarchy(output);
+                    if(enclosed) output.append('E');
                     break;
                 case Kind.Function:
+                    output.append('F');
                     mangleFunction(output);
+                    output.append('E');
                     break;
                 case Kind.VarDeclaration:
+                    mangleVarDeclaration(output);
+                    break;
                 case Kind.FuncDeclaration:
-                    mangleDeclaration(output);
+                    mangleFuncDeclaration(output);
                     break;
             }
         }
 
-        void mangleHierarchy(OutputBuffer output) {
+        void mangleHierarchy(scope OutputBuffer output) {
             assert(isScope);
             if (isStd) {
                 output.append("St");
@@ -287,49 +279,64 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 mangleTemplateArguments(output);
             } else {
                 if(parent) parent.mangleHierarchy(output);
-                output.appendName(name);
+                output.appendSourceName(name);
                 mangleTemplateArguments(output);
             }
         }
 
-        void mangleTemplateArguments(OutputBuffer output) {
+        void mangleTemplateArguments(scope OutputBuffer output) {
             if(tmpl) tmpl.mangle(output);
         }
 
-        void mangleDeclaration(OutputBuffer final_output) {
-            assert(isDeclaration);
-            auto function_type_symbol = kind == CppSymbol.Kind.FuncDeclaration ? declaration_type.isSymbol : null;
-            {
-                scope OutputBuffer output = final_output.fork();
-                if(declaration_const) {
-                    if (kind == CppSymbol.Kind.VarDeclaration)
-                        output.append('L');
-                    else if (kind == CppSymbol.Kind.FuncDeclaration)
-                        output.append('K');
-                    else
-                        assert(0);
+        static CppSymbol mangleDeclarationIndirections(CppNode node, scope OutputBuffer output) {
+            for (;node;) {
+                if (auto symbol = node.isSymbol) {
+                    return symbol;
                 }
-                if(parent) parent.mangleHierarchy(output);
-                output.appendName(name);
-                if (function_type_symbol) {
-                    function_type_symbol.mangleTemplateArguments(output);
-                }
-                final_output.merge(output, isEnclosed());
-            }
-            if (function_type_symbol) {
-                foreach(arg; function_type_symbol.function_args) {
-                    arg.mangle(final_output);
+                if (auto indirection = node.isIndirection) {
+                    indirection.mangle(output);
+                    node = indirection.next;
                 }
             }
+            assert(false);
         }
 
-        void mangleFunction(OutputBuffer output) {
-            assert(kind == CppSymbol.Kind.Function);
-            output.append('F');
-            function_return_type.mangle(output);
+        void mangleVarDeclaration(scope OutputBuffer output) {
+            assert(kind == Kind.VarDeclaration);
+            const enclosed = isEnclosed();
+            if(enclosed) output.append('N');
+            mangleDeclarationIndirections(declaration_type, output);
+            if(parent) parent.mangleHierarchy(output);
+            output.appendSourceName(name);
+            if(enclosed) output.append('E');
+        }
+
+        void mangleFuncDeclaration(scope OutputBuffer output) {
+            assert(kind == Kind.FuncDeclaration);
+            assert(declaration_type);
+            const enclosed = isEnclosed();
+            if(enclosed) output.append('N');
+            auto function_type_symbol =mangleDeclarationIndirections(declaration_type, output);
+            assert(function_type_symbol);
+            if(parent) parent.mangleHierarchy(output);
+            output.appendSourceName(name);
+            function_type_symbol.mangleTemplateArguments(output);
+            if(enclosed) output.append('E');
+            function_type_symbol.mangleFunctionArguments(output);
+        }
+
+        void mangleFunctionArguments(scope OutputBuffer output) {
+            assert(kind == Kind.Function);
             foreach(arg; function_args) {
                 arg.mangle(output);
             }
+        }
+
+        void mangleFunction(scope OutputBuffer output) {
+            assert(kind == Kind.Function);
+            output.append('F');
+            function_return_type.mangle(output);
+            mangleFunction(output);
             output.append('E');
         }
 
@@ -354,6 +361,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         if (auto indirection = node.isIndirection) {
             if (auto symbol = indirection.next.isSymbol) {
                 if (symbol.isValueType && indirection.kind == CppIndirection.Kind.Const) {
+                    assert(symbol.isDeclaration == false);
                     return symbol;
                 }
             }
@@ -402,8 +410,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 }
             }
             auto current = create(symbol, kind);
-            current.declaration_type = removeConstForValueType(TypeVisitor.create(symbol.type));
-            current.declaration_const = symbol.isConst;
+            current.declaration_type = TypeVisitor.create(symbol.type);
             return current;
         }
 
@@ -2168,10 +2175,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 //         print(node, buffer, 2, "");
 //         buffer ~= '\0';
 //         printf("ToString: %s\n", buffer.ptr);
-        scope OutputBufferContext ctx = new OutputBufferContext;
-        ctx.mangleAsCpp = decl.isConst || isNested(node) || decl.isFuncDeclaration;
-        scope OutputBuffer output = new OutputBuffer(ctx);
-        if(ctx.mangleAsCpp) output.append("_Z");
+        scope OutputBuffer output = new OutputBuffer();
+        output.mangleAsCpp = decl.isConst || isNested(node) || decl.isFuncDeclaration;
+        if(output.mangleAsCpp) output.append("_Z");
         node.mangle(output);
         printf(">>> %s\n", output.finish());
         return output.finish();
