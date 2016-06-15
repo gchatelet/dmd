@@ -44,6 +44,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     //-------------------------------------------------------------------------
 
     class OutputBuffer {
+        ////////////////////////////////////////////////////////////////////////
         private static void writeBase36(size_t i, ref const(char)[] output) {
             if (i >= 36) {
                 writeBase36(i / 36, output);
@@ -67,7 +68,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             else
                 assert(0);
         }
-
         void append(char c) { buffer ~= c; }
         void append(const(char)[] other) { buffer ~= other; }
         void appendSourceName(string name) {
@@ -76,6 +76,56 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
         const(char)* finish() { append('\0'); return buffer.ptr; }
         const(char)[] buffer;
+        ////////////////////////////////////////////////////////////////////////
+        private enum State { DISCARD_BASIC_TYPE, ENCODE_BASIC_TYPE, SUBSTITUTE_BASIC_TYPE }
+        private struct BufferRange { size_t start, end; }
+        private struct Tracker {
+            this(CppNode node, OutputBuffer output) {
+                assert(node);
+                this.node = node;
+                this.output = output;
+                this.start = output.buffer.length;
+            }
+
+            ~this() {
+                if(node is null) return;
+                if(node.isSymbol && node.isSymbol.isDeclaration) return;
+                if(node.isSymbol && node.isSymbol.isBasicType) {
+                    if(output.state == State.DISCARD_BASIC_TYPE) return;
+                }
+                auto buffer = output.buffer;
+                const auto current = BufferRange(start, buffer.length);
+                printf("Added %.*s\n", buffer.length - start, buffer.ptr + start);
+            }
+
+            void discard() {
+                node = null;
+            }
+
+            CppNode node;
+            size_t start;
+            OutputBuffer output;
+        }
+
+        private int find(in BufferRange current) {
+            auto sliceFor(BufferRange range) {
+                return buffer[range.start .. range.end];
+            }
+            foreach_reverse(i, range ; symbol_ranges) {
+                if(sliceFor(range) == sliceFor(current)) {
+                    return cast(int)i;
+                }
+            }
+            return -1;
+        }
+
+        Tracker track(CppNode node) { return Tracker(node, this); }
+
+        State state;
+        BufferRange[] symbol_ranges;
+        int symbol_nesting;
+        ////////////////////////////////////////////////////////////////////////
+
         bool mangleAsCpp;
     }
 
@@ -89,10 +139,10 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
     class CppNode {
         CppIndirection isIndirection() { return null; }
+        CppTemplateInstance isTemplateInstance() { return null; }
         CppSymbol isSymbol() { return null; }
 
         abstract void mangle(scope OutputBuffer output);
-        abstract void toString(ref char[] buffer);
     }
 
     // Pointer, Reference or Const
@@ -113,15 +163,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         static CppIndirection toPtr(CppNode node) { return new this(node, Kind.Pointer); }
         static CppIndirection toRef(CppNode node) { return new this(node, Kind.Reference); }
 
-        override void toString(ref char[] buffer) {
-            final switch(kind) {
-                case Kind.Pointer:      buffer~="Ptr  "; break;
-                case Kind.Reference:    buffer~="Ref  "; break;
-                case Kind.Const:        buffer~="Const"; break;
-            }
-        }
-
         override void mangle(scope OutputBuffer output) {
+            auto _ = output.track(this);
             output.append(kind);
             assert(next);
             next.mangle(output);
@@ -134,7 +177,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         this(CppSymbol source) { this.source = source; }
 
-        override void toString(ref char[] buffer) { assert(0); }
+        override CppTemplateInstance isTemplateInstance() { return this; }
 
         bool matchesSubstitutionTemplateArguments(size_t expected_arguments) {
             assert(expected_arguments > 0);
@@ -170,28 +213,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         override CppSymbol isSymbol() { return this; }
 
-        override void toString(ref char[] buffer) {
-            final switch(kind) {
-                case Kind.Namespace:        buffer~="Namespace "; break;
-                case Kind.Struct:           buffer~="Struct "; break;
-                case Kind.Class:            buffer~="Class "; break;
-                case Kind.Function:         buffer~="Function "; break;
-                case Kind.FuncDeclaration:  buffer~="FuncDeclaration "; break;
-                case Kind.VarDeclaration:   buffer~="VarDeclaration "; break;
-                case Kind.Basic:            buffer~="Basic "; break;
-            }
-            if(name) {
-                buffer ~= "'";
-                buffer ~= name;
-                buffer ~= "'";
-            }
-            if(tmpl) {
-                buffer ~= " (tmpl)";
-            }
-        }
-
         bool isCharType() {
             return kind == Kind.Basic && name == "c";
+        }
+
+        bool isBasicType () {
+            return kind == Kind.Basic;
         }
 
         bool isValueType () {
@@ -232,18 +259,48 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
 
         override void mangle(scope OutputBuffer output) {
+            auto _ = output.track(this);
             final switch(kind) {
                 case Kind.Basic:
                     output.append(name);
                     break;
                 case Kind.Namespace:
-                    output.appendSourceName(name);
+                    if(isStd) {
+                        _.discard();
+                        output.append("St");
+                    } else {
+                        output.appendSourceName(name);
+                    }
                     break;
                 case Kind.Struct:
                 case Kind.Class:
-                    const enclosed = isEnclosed();
+                    const enclosed = isEnclosed() && output.symbol_nesting == 0;
                     if(enclosed) output.append('N');
-                    mangleHierarchy(output);
+                    if (isBasicStreamInstance!"i") {
+                        _.discard();
+                        output.append("Si");
+                    } else if (isBasicStreamInstance!"o") {
+                        _.discard();
+                        output.append("So");
+                    } else if (isBasicStreamInstance!"io") {
+                        _.discard();
+                        output.append("Sd");
+                    } else if (isBasicStringInstance) {
+                        _.discard();
+                        output.append("Ss");
+                    } else if (isAllocator) {
+                        _.discard();
+                        output.append("Sa");
+                        mangleTemplateArguments(output);
+                    } else if (isBasicString) {
+                        _.discard();
+                        output.append("Sb");
+                        mangleTemplateArguments(output);
+                    } else {
+                        mangleParent(output);
+                        output.appendSourceName(name);
+                        mangleTemplateArguments(output);
+                    }
                     if(enclosed) output.append('E');
                     break;
                 case Kind.Function:
@@ -258,28 +315,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             }
         }
 
-        void mangleHierarchy(scope OutputBuffer output) {
-            assert(isScope);
-            if (isStd) {
-                output.append("St");
-            } else if (isBasicStreamInstance!"i") {
-                output.append("Si");
-            } else if (isBasicStreamInstance!"o") {
-                output.append("So");
-            } else if (isBasicStreamInstance!"io") {
-                output.append("Sd");
-            } else if (isBasicStringInstance) {
-                output.append("Ss");
-            } else if (isAllocator) {
-                output.append("Sa");
-                mangleTemplateArguments(output);
-            } else if (isBasicString) {
-                output.append("Sb");
-                mangleTemplateArguments(output);
-            } else {
-                if(parent) parent.mangleHierarchy(output);
-                output.appendSourceName(name);
-                mangleTemplateArguments(output);
+        void mangleParent(scope OutputBuffer output) {
+            if(parent) {
+                ++output.symbol_nesting;
+                parent.mangle(output);
+                --output.symbol_nesting;
             }
         }
 
@@ -292,7 +332,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             const enclosed = isEnclosed();
             if(enclosed) output.append('N');
             if(is_declaration_type_const) output.append('L');
-            if(parent) parent.mangleHierarchy(output);
+            if(parent) parent.mangle(output);
             output.appendSourceName(name);
             if(enclosed) output.append('E');
         }
@@ -303,10 +343,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             const enclosed = isEnclosed();
             if(enclosed) output.append('N');
             if(is_declaration_type_const) output.append('K');
-            if(parent) parent.mangleHierarchy(output);
+            mangleParent(output);
             output.appendSourceName(name);
-            mangleTemplateArguments(output);
-            if(tmpl) declaration_type.function_return_type.mangle(output);
+            if(tmpl) {
+                tmpl.mangle(output);
+                declaration_type.function_return_type.mangle(output);
+            }
             if(enclosed) output.append('E');
             declaration_type.mangleFunctionArguments(output);
         }
@@ -2137,35 +2179,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
     static Type isType(RootObject obj) {
         return obj.dyncast == DYNCAST.type ? cast(Type)obj : null;
-    }
-
-    void print(CppNode node, ref char[] buffer, size_t ident, string prepend) {
-        if(node is null) return;
-        buffer ~= '\n';
-        buffer ~= prepend;
-        foreach(_; prepend.length .. ident * 4) buffer ~= ' ';
-        node.toString(buffer);
-        if(auto s = node.isSymbol) {
-            if(auto tmpl = s.tmpl) {
-                foreach(arg; tmpl.template_args) {
-                    print(arg, buffer, ident + 1, "tmpl");
-                }
-            }
-            if(s.kind == CppSymbol.Kind.Function) {
-                print(s.function_return_type, buffer, ident + 1, "ret");
-                foreach(arg; s.function_args) {
-                    print(arg, buffer, ident + 1, "arg");
-                }
-            }
-        }
-        if(auto symbol = node.isSymbol) {
-            if(auto type = symbol.declaration_type)
-                print(type, buffer, ident + 1, prepend);
-            else
-                print(symbol.parent, buffer, ident + 1, prepend);
-        }
-        if(auto indirection = node.isIndirection)
-            print(indirection.next, buffer, ident + 1, prepend);
     }
 
     const(char)* createDeclaration(Declaration decl) {
