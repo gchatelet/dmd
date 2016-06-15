@@ -107,7 +107,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             this.kind = kind;
         }
 
-        override typeof(this) isIndirection() { return this; }
+        override CppIndirection isIndirection() { return this; }
 
         static CppIndirection toConst(CppNode node) { return new this(node, Kind.Const); }
         static CppIndirection toPtr(CppNode node) { return new this(node, Kind.Pointer); }
@@ -157,7 +157,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         enum Kind { Namespace, Struct, Class, Function, Basic, FuncDeclaration, VarDeclaration };
         Kind kind;
         CppSymbol parent;
-        CppNode declaration_type;
+        CppSymbol declaration_type;
+        bool is_declaration_type_const;
         CppTemplateInstance tmpl;
         CppNode function_return_type;
         CppNode[] function_args;
@@ -167,7 +168,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             this.kind = kind;
         }
 
-        override typeof(this) isSymbol() { return this; }
+        override CppSymbol isSymbol() { return this; }
 
         override void toString(ref char[] buffer) {
             final switch(kind) {
@@ -246,9 +247,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                     if(enclosed) output.append('E');
                     break;
                 case Kind.Function:
-                    output.append('F');
                     mangleFunction(output);
-                    output.append('E');
                     break;
                 case Kind.VarDeclaration:
                     mangleVarDeclaration(output);
@@ -288,24 +287,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             if(tmpl) tmpl.mangle(output);
         }
 
-        static CppSymbol mangleDeclarationIndirections(CppNode node, scope OutputBuffer output) {
-            for (;node;) {
-                if (auto symbol = node.isSymbol) {
-                    return symbol;
-                }
-                if (auto indirection = node.isIndirection) {
-                    indirection.mangle(output);
-                    node = indirection.next;
-                }
-            }
-            assert(false);
-        }
-
         void mangleVarDeclaration(scope OutputBuffer output) {
             assert(kind == Kind.VarDeclaration);
             const enclosed = isEnclosed();
             if(enclosed) output.append('N');
-            mangleDeclarationIndirections(declaration_type, output);
+            if(is_declaration_type_const) output.append('L');
             if(parent) parent.mangleHierarchy(output);
             output.appendSourceName(name);
             if(enclosed) output.append('E');
@@ -316,13 +302,13 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(declaration_type);
             const enclosed = isEnclosed();
             if(enclosed) output.append('N');
-            auto function_type_symbol =mangleDeclarationIndirections(declaration_type, output);
-            assert(function_type_symbol);
+            if(is_declaration_type_const) output.append('K');
             if(parent) parent.mangleHierarchy(output);
             output.appendSourceName(name);
-            function_type_symbol.mangleTemplateArguments(output);
+            mangleTemplateArguments(output);
+            if(tmpl) declaration_type.function_return_type.mangle(output);
             if(enclosed) output.append('E');
-            function_type_symbol.mangleFunctionArguments(output);
+            declaration_type.mangleFunctionArguments(output);
         }
 
         void mangleFunctionArguments(scope OutputBuffer output) {
@@ -336,7 +322,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(kind == Kind.Function);
             output.append('F');
             function_return_type.mangle(output);
-            mangleFunction(output);
+            mangleFunctionArguments(output);
             output.append('E');
         }
 
@@ -352,7 +338,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             }
             walkUp(this);
             if(scopes == 1 && std)    return false;
-            if(decl && scopes > 0)      return true;
+            if(decl && scopes > 0)    return true;
             return scopes > 1 && !std;
         }
     }
@@ -361,7 +347,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         if (auto indirection = node.isIndirection) {
             if (auto symbol = indirection.next.isSymbol) {
                 if (symbol.isValueType && indirection.kind == CppIndirection.Kind.Const) {
-                    assert(symbol.isDeclaration == false);
                     return symbol;
                 }
             }
@@ -388,7 +373,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         override void visit(Nspace e)           { output = create(e, CppSymbol.Kind.Namespace); }
         override void visit(VarDeclaration e)   { output = createDecl(e, CppSymbol.Kind.VarDeclaration); }
         override void visit(FuncDeclaration e)  { output = createDecl(e, CppSymbol.Kind.FuncDeclaration); }
-        override void visit(TemplateInstance e) { assert(0); }
+        override void visit(TemplateInstance e) { e.error("Internal Compiler Error"); fatal(); }
 
         CppSymbol create(Dsymbol symbol, CppSymbol.Kind kind) {
             auto current = new CppSymbol(symbol.ident.toString.idup, kind);
@@ -410,7 +395,18 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 }
             }
             auto current = create(symbol, kind);
-            current.declaration_type = TypeVisitor.create(symbol.type);
+            if (symbol.isFuncDeclaration) {
+                auto node = TypeVisitor.create(symbol.type);
+                if(auto indirection = node.isIndirection) {
+                    node = indirection.next;
+                }
+                assert(node);
+                assert(node.isSymbol);
+                current.declaration_type = node.isSymbol;
+            }
+            if(symbol.type.isConst) {
+                current.is_declaration_type_const = true;
+            }
             return current;
         }
 
@@ -464,6 +460,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         void fail(const(char)* type) {
             error(Loc(), "Internal Compiler Error: can't mangle type %s", type);
+            fatal();
         }
 
         extern(D):
@@ -479,7 +476,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         CppSymbol createFunction(TypeFunction typeFun) {
             auto output = new CppSymbol("", CppSymbol.Kind.Function);
             assert(typeFun);
-            output.function_return_type =  removeConstForValueType(TypeVisitor.create(typeFun.next));
+            assert(typeFun.next);
+            output.function_return_type = removeConstForValueType(TypeVisitor.create(typeFun.next));
+            assert(output.function_return_type);
             auto parameters = typeFun.parameters;
             assert(parameters);
             if(parameters.dim) {
@@ -2179,13 +2178,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         output.mangleAsCpp = decl.isConst || isNested(node) || decl.isFuncDeclaration;
         if(output.mangleAsCpp) output.append("_Z");
         node.mangle(output);
-        printf(">>> %s\n", output.finish());
         return output.finish();
     }
 
     extern (C++) const(char)* toCppMangle(Dsymbol s)
     {
-        printf("######################################################\n");
 //         printf("toCppMangle(%s)\n", s.toChars());
 //         scope ctx = new Context;
 //         scope appender = new Appender(ctx);
