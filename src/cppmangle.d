@@ -180,7 +180,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
 
         const(char)* finish() const {
-            printf("%.*s<<\n", buffer.length, buffer.ptr);
+            printf("%.*s |<\n", buffer.length, buffer.ptr);
             const(char)[] new_buffer;
             {
                 size_t start;
@@ -192,7 +192,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 new_buffer ~= buffer[start .. $];
             }
             new_buffer ~= '\0';
-            printf("%s>>\n", new_buffer.ptr);
+            printf("%s |>\n", new_buffer.ptr);
             return new_buffer.ptr;
         }
 
@@ -300,7 +300,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         static CppIndirection toRef(CppNode node) { return new this(node, Kind.Reference); }
 
         override void mangle(scope OutputBuffer output) {
-            auto _ = output.track(this);
+            const _ = output.track(this);
             output.append(kind);
             assert(next);
             next.mangle(output);
@@ -438,13 +438,13 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                             break;
                         case Kind.Namespace:
                         case Kind.Enum:
-                            auto _ = output.track(this);
+                            const _ = output.track(this);
                             mangleParent(output);
                             output.appendSourceName(name);
                             break;
                         case Kind.Aggregate:
                             if (tmpl) {
-                                auto _ = output.track(this);
+                                const _ = output.track(this);
                                 mangleAggregate(output);
                                 tmpl.mangle(output);
                             } else {
@@ -467,7 +467,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         void mangleParent(scope OutputBuffer output) {
             if(parent) {
-                auto _ = output.track_scope();
+                const _ = output.track_scope();
                 parent.mangle(output);
             }
         }
@@ -481,12 +481,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
 
         void mangleBasicType(scope OutputBuffer output) {
-            auto _ = output.track(this);
+            const _ = output.track(this);
             output.append(name);
         }
 
         void mangleSourceName(scope OutputBuffer output) {
-            auto _ = output.track(this);
+            const _ = output.track(this);
             output.appendSourceName(name);
         }
 
@@ -504,8 +504,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(kind == Kind.FuncDeclaration);
             assert(declaration_type);
             {
+                const _ = output.track(this);
                 const enclosed = isEnclosed();
-                auto _ = output.track(this);
                 if(enclosed) output.append('N');
                 if(is_declaration_type_const) output.append('K');
                 mangleParent(output);
@@ -529,7 +529,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         }
 
         void mangleFunction(scope OutputBuffer output) {
-            auto _ = output.track(this);
+            const _ = output.track(this);
             assert(kind == Kind.Function);
             output.append('F');
             function_return_type.mangle(output);
