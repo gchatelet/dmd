@@ -65,7 +65,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         else
             assert(0);
     }
-    
+
     enum ContextState { DISCARD_BASIC_TYPE, ENCODE_BASIC_TYPE, SUBSTITUTE_BASIC_TYPE }
 
     private struct BufferRange {
@@ -83,113 +83,124 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
     class Buffer {
         void appendSourceName(string name, LINK linkage = LINKcpp) {
-            if(linkage == LINKcpp) writeBase10(name.length, buffer_);
-            buffer_ ~= name;
+            if(linkage == LINKcpp) writeBase10(name.length, buffer);
+            buffer ~= name;
         }
         const(char)[] opIndex(in BufferRange range) const {
-            return buffer_[range.start .. range.end];
+            return buffer[range.start .. range.end];
         }
 
-        const(char)[] buffer_;
-        alias buffer_ this;
+        const(char)[] buffer;
+        alias buffer this;
     }
 
     class Substitutions {
-        this(Buffer buffer) { this.buffer_ = buffer; }
+        this(Buffer buffer) { this.buffer = buffer; }
 
-        void pushSymbolRange(size_t start, CppNode node) {
-            const range = BufferRange(start, buffer_.length);
-            auto source = SubstitutionSource(range, node);
-            // Discard declarations, they are never a substitution.
-            if(source.isDeclaration()) return;
-            // Discard basic type outside of templated function declaration.
-            const basicType = source.isBasicType();
-            if(basicType && state_ == ContextState.DISCARD_BASIC_TYPE) return;
-            // Discard duplicates.
-            if(sources_.length && sources_[$-1] == source) return;
-            const printed = print(range, buffer_);
-            printf("%*s", 80 - printed, "".ptr);
-            const index = find(range);
-            if (index >= 0) {
-                printf("SUB      %d", index);
-                addSubstitution(Substitution(source, index));
-            } else {
-                if(!basicType || state_ == ContextState.ENCODE_BASIC_TYPE) {
-                    printf("ADD      %d", sources_.length);
-                    sources_ ~= source;
-                }
+        SymbolTracker track(CppNode node) { return SymbolTracker(node, this, buffer.length); }
+        string key(in BufferRange range) { return buffer[range].idup; }
+        static bool isBasicType(CppNode node) { return node.isSymbol && node.isSymbol.isBasicType; }
+        static bool isBareDeclaration(CppNode node) {
+            if(auto symbol = node.isSymbol) {
+                return symbol.isDeclaration && symbol.tmpl is null;
             }
-            range.print();
-            printf("\n");
+            return false;
         }
 
-        private int find(in BufferRange range) const {
-            foreach_reverse(i, source; sources_) {
-                if(buffer_[range] == buffer_[source.range]) {
-                    assert(range != source.range);
-                    return cast(int)i;
-                }
-            }
-            return -1; 
-        }
-
-        void addSubstitution(in Substitution substitution) {
-            while(substitutions_.length && substitution.supplant(substitutions_[$ - 1])) {
-                --substitutions_.length;
-                printf(" [supplant]");
-            }
-            substitutions_ ~= substitution;
-        }
-
-        const(char)* finish() {
-            printf("%.*s<<\n", buffer_.length, buffer_.ptr);
-            const(char)[] new_buffer;
-            {
-                size_t start = 0;
-                foreach(const substitution; substitutions_) {
-                    new_buffer ~= buffer_[BufferRange(start, substitution.range.start)];
-                    substitution.append(new_buffer);
-                    start = substitution.range.end;
-                }
-                new_buffer ~= buffer_[start .. $];
-            }
-            new_buffer ~= '\0';
-            printf("%s>>\n", new_buffer.ptr);
-            return new_buffer.ptr;
-        }
-        
-        struct SubstitutionSource {
-            BufferRange range;
-            CppNode node;
-            bool isBasicType() { return node.isSymbol && node.isSymbol.isBasicType; }
-            bool isDeclaration() { return node.isSymbol && node.isSymbol.isDeclaration; }
-        }
-
-        struct Substitution {
-            this(SubstitutionSource source, size_t index) {
-                this.range = source.range;
-                this.index = index;
-                this.isBasicType = source.isBasicType;
-            }
+        enum SubType : char { SYMBOL = 'S', BASIC = 'T' }
+        struct Sub {
+            SubType type;
             BufferRange range;
             size_t index;
-            bool isBasicType;
-            bool supplant(in Substitution other) const {
-                return !isBasicType && !other.isBasicType && range.contains(other.range);
-            }
             void append(ref const(char)[] buffer) const {
-                buffer ~= isBasicType ? 'T' : 'S';
+                buffer ~= type;
                 if (index >= 1) writeBase36(index - 1, buffer);
                 buffer ~= '_';
             }
         }
 
-        SymbolTracker track(CppNode node) { return SymbolTracker(node, this, buffer_.length); }
+        void pushSymbolRange(size_t start, CppNode node) {
+            const range = BufferRange(start, buffer.length);
+            // Discard non templated declarations, they are never substitutable.
+            if(isBareDeclaration(node)) return;
+            const printed = print(range, buffer);
+            printf("%*s", 80 - printed, "".ptr);
+            const key = key(range);
+            if(isBasicType(node)) {
+                substituteOrAddType(key, range);
+            } else {
+                substituteOrAddSymbol(key, range);
+            }
+            range.print();
+            printf("\n");
+        }
 
-        Buffer buffer_;
-        const(SubstitutionSource)[] sources_;
-        Substitution[] substitutions_;
-        ContextState state_ = ContextState.DISCARD_BASIC_TYPE;
+        private void substituteOrAddType(string key, in BufferRange range) {
+            if(state == ContextState.SUBSTITUTE_BASIC_TYPE) {
+                if(auto found = key in symbols) {
+                    addSymbolSubstitution(*found, range);
+                } else if(auto found = key in types) {
+                    addTypeSubstitution(*found, range);
+                    printf(" ADD SYM  %d", symbols.length);
+                    symbols[key] = Sub(SubType.SYMBOL, found.range, symbols.length);
+                } else {
+                    printf("DISCARD   ");
+                }
+            } else if(state == ContextState.ENCODE_BASIC_TYPE) {
+                printf("ADD TYPE %d", types.length);
+                types[key] = Sub(SubType.BASIC, range, types.length);
+            } else {
+                printf("DISCARD   ");
+            }
+        }
+
+        private void substituteOrAddSymbol(string key, in BufferRange range) {
+            if(auto found = key in symbols) {
+                addSymbolSubstitution(*found, range);
+            } else {
+                printf("ADD SYM  %d", symbols.length);
+                symbols[key] = Sub(SubType.SYMBOL, range, symbols.length);
+            }
+        }
+
+        private void addSymbolSubstitution(in Sub found, in BufferRange range) {
+            printf("SUB SYM  %d", found.index);
+            // Coalesce substitutions. i.e. if a new substitution contains
+            // the previous ones it takes them over.
+            while(subs.length &&range.contains(subs[$-1].range)) {
+                --subs.length;
+                printf(" [sup]");
+            }
+            subs ~= Sub(SubType.SYMBOL, range, found.index);
+        }
+
+        private void addTypeSubstitution(in Sub found, in BufferRange range) {
+            printf("SUB TYPE %d", found.index);
+            subs ~= Sub(SubType.BASIC, range, found.index);
+        }
+
+        const(char)* finish() const {
+            printf("%.*s<<\n", buffer.length, buffer.ptr);
+            const(char)[] new_buffer;
+            {
+                size_t start;
+                foreach(const ref sub; subs) {
+                    new_buffer ~= buffer[BufferRange(start, sub.range.start)];
+                    sub.append(new_buffer);
+                    start = sub.range.end;
+                }
+                new_buffer ~= buffer[start .. $];
+            }
+            new_buffer ~= '\0';
+            printf("%s>>\n", new_buffer.ptr);
+            return new_buffer.ptr;
+        }
+
+        const(Buffer) buffer;
+        ContextState state = ContextState.DISCARD_BASIC_TYPE;
+        Sub[string] symbols;
+        Sub[string] types;
+        Sub[] subs;
     }
 
     private struct SymbolTracker {
@@ -221,7 +232,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         ScopeTracker track_scope();
         bool isRootScope() const;
         void setState(ContextState state);
-    } 
+    }
 
     class Context : OutputBuffer {
         this() {
@@ -232,12 +243,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         override void append(const(char)[] other) { buffer ~= other; }
         override void appendSourceName(string name) { buffer.appendSourceName(name, mangleAsCpp ? LINKcpp : LINKc); }
         override const(char)* finish() { return substitutions.finish(); }
-        
+
         ////////////////////////////////////////////////////////////////////////
         override SymbolTracker track(CppNode node) { return substitutions.track(node); }
         override ScopeTracker track_scope() { return ScopeTracker(this); }
         override bool isRootScope() const { return scope_counter == 0; }
-        override void setState(ContextState state) { substitutions.state_ = state; }
+        override void setState(ContextState state) { substitutions.state = state; }
 
 
         ////////////////////////////////////////////////////////////////////////
@@ -418,7 +429,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 case Abbreviation.YES:
                     break;
                 case Abbreviation.YES_MANGLE_TMPL_ARGS:
-                    mangleTemplateArguments(output);
+                    if(tmpl) tmpl.mangle(output);
                     break;
                 case Abbreviation.NO:
                     final switch(kind) {
@@ -432,13 +443,13 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                             output.appendSourceName(name);
                             break;
                         case Kind.Aggregate:
-                            auto _ = output.track(this);
-                            const enclosed = isEnclosed() && output.isRootScope();
-                            if(enclosed) output.append('N');
-                            mangleParent(output);
-                            mangleSourceName(output);
-                            if(enclosed) output.append('E');
-                            mangleTemplateArguments(output);
+                            if (tmpl) {
+                                auto _ = output.track(this);
+                                mangleAggregate(output);
+                                tmpl.mangle(output);
+                            } else {
+                                mangleAggregate(output);
+                            }
                             break;
                         case Kind.Function:
                             mangleFunction(output);
@@ -461,8 +472,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             }
         }
 
-        void mangleTemplateArguments(scope OutputBuffer output) {
-            if(tmpl) tmpl.mangle(output);
+        void mangleAggregate(scope OutputBuffer output) {
+            const enclosed = isEnclosed() && output.isRootScope();
+            if(enclosed) output.append('N');
+            mangleParent(output);
+            mangleSourceName(output);
+            if(enclosed) output.append('E');
         }
 
         void mangleBasicType(scope OutputBuffer output) {
@@ -488,18 +503,21 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         void mangleFuncDeclaration(scope OutputBuffer output) {
             assert(kind == Kind.FuncDeclaration);
             assert(declaration_type);
-            const enclosed = isEnclosed();
-            if(enclosed) output.append('N');
-            if(is_declaration_type_const) output.append('K');
-            mangleParent(output);
-            output.appendSourceName(name);
-            if(tmpl) {
-                output.setState(ContextState.ENCODE_BASIC_TYPE);
-                tmpl.mangle(output);
-                output.setState(ContextState.SUBSTITUTE_BASIC_TYPE);
-                declaration_type.function_return_type.mangle(output);
+            {
+                const enclosed = isEnclosed();
+                auto _ = output.track(this);
+                if(enclosed) output.append('N');
+                if(is_declaration_type_const) output.append('K');
+                mangleParent(output);
+                output.appendSourceName(name);
+                if(tmpl) {
+                    output.setState(ContextState.ENCODE_BASIC_TYPE);
+                    tmpl.mangle(output);
+                    output.setState(ContextState.SUBSTITUTE_BASIC_TYPE);
+                }
+                if(enclosed) output.append('E');
             }
-            if(enclosed) output.append('E');
+            if(tmpl) declaration_type.function_return_type.mangle(output);
             declaration_type.mangleFunctionArguments(output);
         }
 
