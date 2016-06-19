@@ -6,5 +6,5 @@ for file in `ls test/mangling/*.d`; do
     echo ">>>>>" $file "<<<<<"
     cat $file
     echo "######################################################"
-    ./src/dmd -main $file
+    ./src/dmd -c -main $file
 done
