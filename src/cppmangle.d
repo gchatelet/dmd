@@ -295,9 +295,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         override CppIndirection isIndirection() { return this; }
 
-        static CppIndirection toConst(CppNode node) { return new this(node, Kind.Const); }
-        static CppIndirection toPtr(CppNode node) { return new this(node, Kind.Pointer); }
-        static CppIndirection toRef(CppNode node) { return new this(node, Kind.Reference); }
+        static CppIndirection toConst(CppNode node) { return new CppIndirection(node, Kind.Const); }
+        static CppIndirection toPtr(CppNode node) { return new CppIndirection(node, Kind.Pointer); }
+        static CppIndirection toRef(CppNode node) { return new CppIndirection(node, Kind.Reference); }
 
         override void mangle(scope OutputBuffer output) {
             const _ = output.track(this);
@@ -661,7 +661,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         override void visit(TypeSArray s)     { fail("TypeSArray"); }
         override void visit(TypeDelegate s)   { fail("TypeDelegate"); }
         override void visit(TypeBasic s)      { output = createTypeBasic(s); }
-        override void visit(TypeClass s)      { output = adaptConstness(s, CppIndirection.toPtr(ScopeHierarchy.create(s.sym))); }
+        override void visit(TypeClass s)      {
+            if(s.sym.com) fail("COM class for now");
+            output = adaptConstness(s, ScopeHierarchy.create(s.sym));
+            // Adding reference semantic in case it's a D class.
+            if(!s.sym.cpp) output = CppIndirection.toPtr(output);
+        }
         override void visit(TypeFunction s)   { output = adaptConstness(s, createFunction(s)); }
         override void visit(TypePointer s)    { output = adaptConstness(s, CppIndirection.toPtr(create(s.next))); }
         override void visit(TypeReference s)  { output = adaptConstness(s, CppIndirection.toRef(create(s.next))); }
