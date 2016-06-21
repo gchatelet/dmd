@@ -548,8 +548,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
               if (symbol.parent) walkUp(symbol.parent);
             }
             walkUp(this);
-            if(scopes == 1 && std)    return false;
-            if(decl && scopes > 0)    return true;
+            if(scopes == 1 && std) return false;
+            if(decl && scopes > 0) return true;
             return scopes > 1 && !std;
         }
     }
@@ -634,6 +634,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(arguments);
             if(arguments.dim) {
                 foreach(argument; *arguments) {
+                    assert(argument.isType);
                     output.template_args ~= removeConstForValueType(TypeVisitor.create(cast(Type)argument));
                 }
             } else {
@@ -661,12 +662,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         override void visit(TypeSArray s)     { fail("TypeSArray"); }
         override void visit(TypeDelegate s)   { fail("TypeDelegate"); }
         override void visit(TypeBasic s)      { output = createTypeBasic(s); }
-        override void visit(TypeClass s)      {
-            if(s.sym.com) fail("COM class for now");
-            output = adaptConstness(s, ScopeHierarchy.create(s.sym));
-            // Adding reference semantic in case it's a D class.
-            if(!s.sym.cpp) output = CppIndirection.toPtr(output);
-        }
+        override void visit(TypeClass s)      { output = adaptClass(s, adaptConstness(s, ScopeHierarchy.create(s.sym))); }
         override void visit(TypeFunction s)   { output = adaptConstness(s, createFunction(s)); }
         override void visit(TypePointer s)    { output = adaptConstness(s, CppIndirection.toPtr(create(s.next))); }
         override void visit(TypeReference s)  { output = adaptConstness(s, CppIndirection.toRef(create(s.next))); }
@@ -690,6 +686,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         static auto unConst(T)(T type) {
             const mod = type.mod & ~MODconst;
             return cast(T)type.castMod(mod);
+        }
+
+        CppNode adaptClass(TypeClass s, CppNode node) {
+            if(s.sym.com) fail("COM class for now");
+            // Adding reference semantic in case it's a D class.
+            return !s.sym.cpp ? CppIndirection.toPtr(node) : node;
         }
 
         CppNode adaptConstness(Type type, CppNode node) {
