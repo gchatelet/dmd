@@ -66,7 +66,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(0);
     }
 
-    enum ContextState { DISCARD_BASIC_TYPE, ENCODE_BASIC_TYPE, SUBSTITUTE_BASIC_TYPE }
+    private static void writeSubstitution(in size_t index, in char type, ref const(char)[] buffer) {
+        buffer ~= type;
+        if (index >= 1) writeBase36(index - 1, buffer);
+        buffer ~= '_';
+    }
 
     private struct BufferRange {
         bool contains(in BufferRange other) const { return start <= other.start && end >= other.end; }
@@ -75,10 +79,16 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         size_t end;
     }
 
-    private int print(in BufferRange range, const(char)[] buffer) {
+    private static int print(in BufferRange range, const(char)[] buffer) {
         with(range) {
             return printf("%*s%.*s", start, "".ptr, end - start, buffer.ptr + start);
         }
+    }
+
+    private static void printSub(size_t index) {
+        printf("S");
+        if(index > 0) printf("%d", index - 1);
+        printf("_");
     }
 
     class Buffer {
@@ -86,6 +96,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             if(linkage == LINKcpp) writeBase10(name.length, buffer);
             buffer ~= name;
         }
+
         const(char)[] opIndex(in BufferRange range) const {
             return buffer[range.start .. range.end];
         }
@@ -97,9 +108,10 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     class Substitutions {
         this(Buffer buffer) { this.buffer = buffer; }
 
-        SymbolTracker track(CppNode node) { return SymbolTracker(node, this, buffer.length); }
-        string key(in BufferRange range) { return buffer[range].idup; }
-        static bool isBasicType(CppNode node) { return node.isSymbol && node.isSymbol.isBasicType; }
+        static bool isBasicType(CppNode node) {
+            return node.isSymbol && node.isSymbol.isBasicType;
+        }
+
         static bool isBareDeclaration(CppNode node) {
             if(auto symbol = node.isSymbol) {
                 return symbol.isDeclaration && symbol.tmpl is null;
@@ -107,79 +119,53 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return false;
         }
 
-        enum SubType : char { SYMBOL = 'S', BASIC = 'T' }
-        struct Sub {
-            SubType type;
+        private string key(in BufferRange range) {
+            return buffer[range].idup;
+        }
+
+        private struct Sub {
             BufferRange range;
             size_t index;
             void append(ref const(char)[] buffer) const {
-                buffer ~= type;
-                if (index >= 1) writeBase36(index - 1, buffer);
-                buffer ~= '_';
+                writeSubstitution(index, 'S', buffer);
             }
         }
 
-        void pushSymbolRange(size_t start, CppNode node) {
+        public SymbolTracker track(CppNode node) {
+            return SymbolTracker(node, this, buffer.length);
+        }
+
+        private void pushSymbolRange(size_t start, CppNode node) {
+            // Discard basic type and non templated declarations, they are never substitutable.
+            if(isBasicType(node) || isBareDeclaration(node)) return;
             const range = BufferRange(start, buffer.length);
-            // Discard non templated declarations, they are never substitutable.
-            if(isBareDeclaration(node)) return;
-            const printed = print(range, buffer);
-            printf("%*s", 80 - printed, "".ptr);
+            const printed = print(range, buffer); printf("%*s", 80 - printed, "".ptr);
             const key = key(range);
-            if(isBasicType(node)) {
-                substituteOrAddType(key, range);
-            } else {
-                substituteOrAddSymbol(key, range);
-            }
-            range.print();
-            printf("\n");
-        }
-
-        private void substituteOrAddType(string key, in BufferRange range) {
-            if(state == ContextState.SUBSTITUTE_BASIC_TYPE) {
-                if(auto found = key in symbols) {
-                    addSymbolSubstitution(*found, range);
-                } else if(auto found = key in types) {
-                    addTypeSubstitution(*found, range);
-                    printf(" ADD SYM  %d", symbols.length);
-                    symbols[key] = Sub(SubType.SYMBOL, found.range, symbols.length);
-                } else {
-                    printf("DISCARD   ");
-                }
-            } else if(state == ContextState.ENCODE_BASIC_TYPE) {
-                printf("ADD TYPE %d", types.length);
-                types[key] = Sub(SubType.BASIC, range, types.length);
-            } else {
-                printf("DISCARD   ");
-            }
+            substituteOrAddSymbol(key, range);
+            range.print(); printf("\n");
         }
 
         private void substituteOrAddSymbol(string key, in BufferRange range) {
             if(auto found = key in symbols) {
                 addSymbolSubstitution(*found, range);
             } else {
-                printf("ADD SYM  %d", symbols.length);
-                symbols[key] = Sub(SubType.SYMBOL, range, symbols.length);
+                printf("ADD SYM "); printSub(symbols.length);
+                symbols[key] = Sub(range, symbols.length);
             }
         }
 
         private void addSymbolSubstitution(in Sub found, in BufferRange range) {
-            printf("SUB SYM  %d", found.index);
+            printf("SUB SYM ", found.index); printSub(found.index);
             // Coalesce substitutions. i.e. if a new substitution contains
             // the previous ones it takes them over.
             while(subs.length &&range.contains(subs[$-1].range)) {
                 --subs.length;
                 printf(" [sup]");
             }
-            subs ~= Sub(SubType.SYMBOL, range, found.index);
+            subs ~= Sub(range, found.index);
         }
 
-        private void addTypeSubstitution(in Sub found, in BufferRange range) {
-            printf("SUB TYPE %d", found.index);
-            subs ~= Sub(SubType.BASIC, range, found.index);
-        }
-
-        const(char)* finish() const {
+        public const(char)* finish() const {
             printf("%.*s |<\n", buffer.length, buffer.ptr);
             const(char)[] new_buffer;
             {
@@ -196,10 +182,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return new_buffer.ptr;
         }
 
-        const(Buffer) buffer;
-        ContextState state = ContextState.DISCARD_BASIC_TYPE;
+        Buffer buffer;
         Sub[string] symbols;
-        Sub[string] types;
         Sub[] subs;
     }
 
@@ -230,8 +214,8 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         // State tracking
         SymbolTracker track(CppNode node);
         ScopeTracker track_scope();
+
         bool isRootScope() const;
-        void setState(ContextState state);
     }
 
     class Context : OutputBuffer {
@@ -248,8 +232,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         override SymbolTracker track(CppNode node) { return substitutions.track(node); }
         override ScopeTracker track_scope() { return ScopeTracker(this); }
         override bool isRootScope() const { return scope_counter == 0; }
-        override void setState(ContextState state) { substitutions.state = state; }
-
 
         ////////////////////////////////////////////////////////////////////////
         scope Buffer buffer;
@@ -310,6 +292,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     final class CppTemplateInstance: CppNode {
         CppSymbol source;
         CppNode[] template_args;
+        CppNode[] template_function_args;
 
         this(CppSymbol source) { this.source = source; }
 
@@ -324,16 +307,18 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         override void mangle(scope OutputBuffer output) {
             output.append('I');
-            foreach (argument ; template_args) {
-                argument.mangle(output);
-            }
+            foreach (argument ; template_args) argument.mangle(output);
             output.append('E');
+        }
+
+        void mangleFunctionArguments(scope OutputBuffer output) {
+            foreach(arg; template_function_args) arg.mangle(output);
         }
     }
 
     final class CppSymbol: CppNode {
         string name;
-        enum Kind { Namespace, Aggregate, Enum, Function, Basic, FuncDeclaration, VarDeclaration };
+        enum Kind { Namespace, Aggregate, Enum, Function, Basic, FuncDeclaration, VarDeclaration, Identifier};
         Kind kind;
         CppSymbol parent;
         CppSymbol declaration_type;
@@ -349,46 +334,16 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
 
         override CppSymbol isSymbol() { return this; }
 
-        bool isCharType() {
-            return kind == Kind.Basic && name == "c";
-        }
-
-        bool isBasicType () {
-            return kind == Kind.Basic;
-        }
-
-        bool isValueType () {
-            return kind == Kind.Aggregate || kind == Kind.Basic;
-        }
-
-        bool isDeclaration() {
-            return kind == Kind.VarDeclaration || kind == Kind.FuncDeclaration;
-        }
-
-        bool isAggregate() {
-            return kind == Kind.Aggregate;
-        }
-
-        bool isScope() {
-            return isAggregate() || kind == Kind.Namespace;
-        }
-
-        bool isStd() {
-            return kind == Kind.Namespace && name == "std" && parent is null;
-        }
-
-        bool isAllocator() {
-            return isAggregate() && name == "allocator" && parent && parent.isStd();
-        }
-
-        bool isBasicString() {
-            return isAggregate() && name == "basic_string" && parent && parent.isStd();
-        }
-
-        bool isBasicStringInstance() {
-            return isBasicString && tmpl && tmpl.matchesSubstitutionTemplateArguments(3);
-        }
-
+        bool isCharType() { return kind == Kind.Basic && name == "c"; }
+        bool isBasicType () { return kind == Kind.Basic; }
+        bool isValueType () { return kind == Kind.Aggregate || kind == Kind.Basic; }
+        bool isDeclaration() { return kind == Kind.VarDeclaration || kind == Kind.FuncDeclaration; }
+        bool isAggregate() { return kind == Kind.Aggregate; }
+        bool isScope() { return isAggregate() || kind == Kind.Namespace; }
+        bool isStd() { return kind == Kind.Namespace && name == "std" && parent is null; }
+        bool isAllocator() { return isAggregate() && name == "allocator" && parent && parent.isStd(); }
+        bool isBasicString() { return isAggregate() && name == "basic_string" && parent && parent.isStd(); }
+        bool isBasicStringInstance() { return isBasicString && tmpl && tmpl.matchesSubstitutionTemplateArguments(3); }
         bool isBasicStreamInstance(string type)() {
             static assert(type == "i" || type == "o" || type == "io");
             return isAggregate() && name == "basic_" ~ type ~ "stream" && parent && parent.isStd() && tmpl && tmpl.matchesSubstitutionTemplateArguments(2);
@@ -436,6 +391,9 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                         case Kind.Basic:
                             mangleBasicType(output);
                             break;
+                        case Kind.Identifier:
+                            mangleIdentifier(output);
+                            break;
                         case Kind.Namespace:
                         case Kind.Enum:
                             const _ = output.track(this);
@@ -446,7 +404,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                             if (tmpl) {
                                 const _ = output.track(this);
                                 mangleAggregate(output);
-                                tmpl.mangle(output);
                             } else {
                                 mangleAggregate(output);
                             }
@@ -475,12 +432,23 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
         void mangleAggregate(scope OutputBuffer output) {
             const enclosed = isEnclosed() && output.isRootScope();
             if(enclosed) output.append('N');
-            mangleParent(output);
-            mangleSourceName(output);
+            if(parent) {
+                const _ = output.track(this);
+                mangleParent(output);
+                mangleSourceName(output);
+            } else {
+                mangleSourceName(output);
+            }
+            if(tmpl) tmpl.mangle(output);
             if(enclosed) output.append('E');
         }
 
         void mangleBasicType(scope OutputBuffer output) {
+            const _ = output.track(this);
+            output.append(name);
+        }
+
+        void mangleIdentifier(scope OutputBuffer output) {
             const _ = output.track(this);
             output.append(name);
         }
@@ -510,22 +478,16 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 if(is_declaration_type_const) output.append('K');
                 mangleParent(output);
                 output.appendSourceName(name);
-                if(tmpl) {
-                    output.setState(ContextState.ENCODE_BASIC_TYPE);
-                    tmpl.mangle(output);
-                    output.setState(ContextState.SUBSTITUTE_BASIC_TYPE);
-                }
+                if(tmpl) tmpl.mangle(output);
                 if(enclosed) output.append('E');
+                if(!tmpl) declaration_type.mangleFunctionArguments(output);
             }
-            if(tmpl) declaration_type.function_return_type.mangle(output);
-            declaration_type.mangleFunctionArguments(output);
+            if(tmpl) tmpl.mangleFunctionArguments(output);
         }
 
         void mangleFunctionArguments(scope OutputBuffer output) {
             assert(kind == Kind.Function);
-            foreach(arg; function_args) {
-                arg.mangle(output);
-            }
+            foreach(arg; function_args) arg.mangle(output);
         }
 
         void mangleFunction(scope OutputBuffer output) {
@@ -628,13 +590,60 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return current;
         }
 
+        CppSymbol getTypeIdentifier(CppNode node) {
+            while(node.isIndirection) node = node.isIndirection.next;
+            if(auto symbol = node.isSymbol)
+                return symbol.kind == CppSymbol.Kind.Identifier ? symbol : null;
+            return null;
+        }
+
         CppTemplateInstance createTemplateInstance(CppSymbol source, TemplateInstance templateInstance) {
             auto output = new CppTemplateInstance(source);
+            auto declaration = cast(TemplateDeclaration)templateInstance.tempdecl;
+            assert(declaration);
+            assert(declaration.parameters);
+            import ddmd.identifier;
+            string[string] template_identifiers;
+            // These are the template parameters.
+            // i.e. template<typename A, typename B> foo();
+            //                        ^           ^
+            foreach(i, parameter; *declaration.parameters) {
+                if(parameter.ident) {
+                    const(char)[] substitution;
+                    writeSubstitution(i, 'T', substitution);
+                    template_identifiers[parameter.ident.toString.idup] = substitution.idup;
+                }
+            }
+            if (declaration.onemember) {
+                FuncDeclaration fd = declaration.onemember.isFuncDeclaration();
+                if (fd && fd.type) {
+                    TypeFunction tf = cast(TypeFunction)fd.type;
+                    assert(tf);
+                    if(tf.next) {
+                        output.template_function_args ~= TypeVisitor.create(tf.next);
+                    }
+                    // These are the templated function arguments.
+                    if(tf.parameters) foreach(parameter; *tf.parameters) {
+                        output.template_function_args ~= TypeVisitor.create(parameter.type);
+                    }
+                    // Changing template name into substitutions.
+                    // e.g. template<typename A, typename B> foo();
+                    // 'A' becomes 'T_', 'B' becomes 'T0_'.
+                    foreach(arg; output.template_function_args) {
+                        if(auto type_identifier = getTypeIdentifier(arg)) {
+                            type_identifier.name = template_identifiers[type_identifier.name];
+                        }
+                    }
+                }
+            }
             auto arguments = templateInstance.tiargs;
             assert(arguments);
             if(arguments.dim) {
                 foreach(argument; *arguments) {
-                    assert(argument.isType);
+                    if(argument.isType is null) {
+                        templateInstance.error(Loc(), "Internal Compiler Error: can't mangle non type template argument");
+                        fatal();
+                    }
                     output.template_args ~= removeConstForValueType(TypeVisitor.create(cast(Type)argument));
                 }
             } else {
@@ -647,49 +656,42 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
     extern (C++) final class TypeVisitor: Visitor
     {
         alias visit = super.visit;
+
+        override void visit(Type t) {
+            if (t.isImmutable() || t.isShared())
+            {
+                t.error(Loc(), "Internal Compiler Error: shared or immutable types can not be mapped to C++ (%s)", t.toChars());
+            }
+            else
+            {
+                t.error(Loc(), "Internal Compiler Error: unsupported type %s\n", t.toChars());
+            }
+            fatal(); //Fatal, because this error should be handled in frontend
+        }
+        
+        override void visit(TypeBasic s)      { output = createTypeBasic(s); }
+        override void visit(TypeClass s)      { output = adaptClass(s, adaptConstness(s, ScopeHierarchy.create(s.sym))); }
+        override void visit(TypeEnum s)       { output = adaptConstness(s, ScopeHierarchy.create(s.sym)); }
+        override void visit(TypeFunction s)   { output = adaptConstness(s, createFunction(s)); }
+        override void visit(TypeIdentifier s) { output = createIndentifier(s); }
+        override void visit(TypePointer s)    { output = adaptConstness(s, CppIndirection.toPtr(create(s.next))); }
+        override void visit(TypeReference s)  { output = adaptConstness(s, CppIndirection.toRef(create(s.next))); }
+        override void visit(TypeStruct s)     { output = adaptConstness(s, ScopeHierarchy.create(s.sym)); }
+        
+        extern(D):
         CppNode output;
+
         static auto create(Type s) {
             scope visitor = new TypeVisitor();
             s.accept(visitor);
             return visitor.output;
         }
-        override void visit(TypeEnum s)       { output = adaptConstness(s, ScopeHierarchy.create(s.sym)); }
-        override void visit(TypeError s)      { fail("TypeError"); }
-        override void visit(TypeNext s)       { fail("TypeNext"); }
-        override void visit(TypeArray s)      { fail("TypeArray"); }
-        override void visit(TypeAArray s)     { fail("TypeAArray"); }
-        override void visit(TypeDArray s)     { fail("TypeDArray"); }
-        override void visit(TypeSArray s)     { fail("TypeSArray"); }
-        override void visit(TypeDelegate s)   { fail("TypeDelegate"); }
-        override void visit(TypeBasic s)      { output = createTypeBasic(s); }
-        override void visit(TypeClass s)      { output = adaptClass(s, adaptConstness(s, ScopeHierarchy.create(s.sym))); }
-        override void visit(TypeFunction s)   { output = adaptConstness(s, createFunction(s)); }
-        override void visit(TypePointer s)    { output = adaptConstness(s, CppIndirection.toPtr(create(s.next))); }
-        override void visit(TypeReference s)  { output = adaptConstness(s, CppIndirection.toRef(create(s.next))); }
-        override void visit(TypeStruct s)     { output = adaptConstness(s, ScopeHierarchy.create(s.sym)); }
-        override void visit(TypeSlice s)      { fail("TypeSlice"); }
-        override void visit(TypeNull s)       { fail("TypeNull"); }
-        override void visit(TypeQualified s)  { fail("TypeQualified "); }
-        override void visit(TypeIdentifier s) { fail("TypeIdentifier"); }
-        override void visit(TypeInstance s)   { fail("TypeInstance"); }
-        override void visit(TypeReturn s)     { fail("TypeReturn"); }
-        override void visit(TypeTypeof s)     { fail("TypeTypeof"); }
-        override void visit(TypeTuple s)      { fail("TypeTuple"); }
-        override void visit(TypeVector s)     { fail("TypeVector"); }
-
-        void fail(const(char)* type) {
-            error(Loc(), "Internal Compiler Error: can't mangle type %s", type);
-            fatal();
-        }
-
-        extern(D):
-        static auto unConst(T)(T type) {
-            const mod = type.mod & ~MODconst;
-            return cast(T)type.castMod(mod);
-        }
 
         CppNode adaptClass(TypeClass s, CppNode node) {
-            if(s.sym.com) fail("COM class for now");
+            if(s.sym.com) {
+                error(Loc(), "Internal Compiler Error: can't mangle COM class for now", s);
+                fatal();
+            }
             // Adding reference semantic in case it's a D class.
             return !s.sym.cpp ? CppIndirection.toPtr(node) : node;
         }
@@ -717,6 +719,10 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                 output.function_args ~= TypeVisitor.create(Type.tvoid);
             }
             return output;
+        }
+
+        CppSymbol createIndentifier(TypeIdentifier s) {
+            return new CppSymbol(s.ident.toString.idup, CppSymbol.Kind.Identifier);
         }
 
         CppNode createTypeBasic(TypeBasic type) {
