@@ -2,4 +2,4 @@ extern(C++):
 class Expression;
 void foo(Expression);
 
-static assert(foo.mangleof == "_Z3foo10Expression");
+static assert(foo.mangleof == "_Z3fooP10Expression");
