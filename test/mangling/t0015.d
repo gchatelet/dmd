@@ -1,4 +1,25 @@
 // template <typename A, typename B, typename C> C &foo(B *, const A *);
-// template <> int **&foo<int *, const int *, int **>(const int **, int *const *) {}
+// template <>
+// int **&foo<int *, const int *, int **>(const int **, int *const *) {}
 extern(C++) ref C foo(A, B, C)(B*, const(A)*);
-static assert(foo!(int*, const(int)*, int**).mangleof == "_Z3fooIPiPKiPS0_ERT1_PT0_PKT_"); 
+static assert(foo!(int*, const(int)*, int**).mangleof == "_Z3fooIPiPKiPS0_ERT1_PT0_PKT_");
+
+// _Z3fooIPiPKiPS_ERT1_PT0_PKT_
+// _Z3fooIPiPKiPS0_ERT1_PT0_PKT_
+
+//        Pi.......................................................................ADD SYM S_ [7, 9]
+//           Ki....................................................................ADD SYM S0_ [10, 12]
+//          PKi....................................................................ADD SYM S1_ [9, 12]
+//              Pi.................................................................SUB SYM S_ [13, 15]
+//             PPi.................................................................ADD SYM S2_ [12, 15]
+//   3fooIPiPKiPPiE................................................................ADD SYM S3_ [2, 16]
+//                  T1_............................................................ADD SYM S4_ [17, 20]
+//                 RT1_............................................................ADD SYM S5_ [16, 20]
+//                      T0_........................................................ADD SYM S6_ [21, 24]
+//                     PT0_........................................................ADD SYM S7_ [20, 24]
+//                           T_....................................................ADD SYM S8_ [26, 28]
+//                          KT_....................................................ADD SYM S9_ [25, 28]
+//                         PKT_....................................................ADD SYM S10_ [24, 28]
+// _Z3fooIPiPKiPPiERT1_PT0_PKT_ |<
+// _Z3fooIPiPKiPS_ERT1_PT0_PKT_ |>
+// _Z3fooIPiPKiPS_ERT1_PT0_PKT_

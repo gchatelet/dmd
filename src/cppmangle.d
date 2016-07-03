@@ -139,7 +139,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             // Discard basic type and non templated declarations, they are never substitutable.
             if(isBasicType(node) || isBareDeclaration(node)) return;
             const range = BufferRange(start, buffer.length);
-            const printed = print(range, buffer); printf("%*s", 80 - printed, "".ptr);
+            const printed = print(range, buffer); foreach(_; 0..80-printed) putchar('.');
             const key = key(range);
             substituteOrAddSymbol(key, range);
             range.print(); printf("\n");
@@ -618,7 +618,20 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(template_declaration);
             auto parameters = template_declaration.parameters;
             assert(parameters);
-
+            //////////////////////////////////
+            // Encode the template parameters.
+            auto tiargs = template_instance.tiargs;
+            assert(tiargs);
+            if(tiargs.dim) {
+                bool is_var_arg = false;
+                foreach(i, tiarg; *tiargs) {
+                    output.template_args ~= createTemplateArgument(symbol, tiarg, is_var_arg ? null : (*parameters)[i]);
+                }
+            } else {
+                output.template_args ~= createTemplateArgument(symbol, Type.tvoid, null);
+            }
+            //////////////////////////////////////////
+            // Encode the template function arguments.
             import ddmd.identifier;
             // A map from template parameter names (e.g. 'T') to type substitutions (e.g. 'T0_').
             string[string] template_identifiers;
@@ -638,11 +651,12 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                     TypeFunction tf = cast(TypeFunction)fd.type;
                     assert(tf);
                     if(tf.next) {
-                        output.template_function_args ~= TypeVisitor.create(tf.next);
+                        auto type = TypeVisitor.create(tf.nextOf());
+                        output.template_function_args ~= tf.isref ? CppIndirection.toRef(type) : type;
                     }
                     // These are the templated function arguments.
                     if(tf.parameters) foreach(parameter; *tf.parameters) {
-                        output.template_function_args ~= TypeVisitor.create(parameter.type);
+                        output.template_function_args ~= TypeVisitor.create(parameter);
                     }
                     // Changing template name into substitutions.
                     // e.g. template<typename A, typename B> foo();
@@ -654,23 +668,13 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                     }
                 }
             }
-            auto tiargs = template_instance.tiargs;
-            assert(tiargs);
-            if(tiargs.dim) {
-                bool is_var_arg = false;
-                foreach(i, tiarg; *tiargs) {
-                    output.template_args ~= createTemplateArgument(symbol, tiarg, is_var_arg ? null : (*parameters)[i]);
-                }
-            } else {
-                output.template_args ~= createTemplateArgument(symbol, Type.tvoid, null);
-            }
             return output;
         }
 
         CppNode createTemplateArgument(Dsymbol symbol, RootObject obj, TemplateParameter template_parameter) {
             switch(obj.dyncast) {
                 case DYNCAST_TYPE:
-                    return removeConstForValueType(TypeVisitor.create(cast(Type)obj));
+                    return TypeVisitor.create(cast(Type)obj);
                 case DYNCAST_EXPRESSION:
                     if(auto tv = template_parameter.isTemplateValueParameter()) {
                         if (tv.valType.isintegral()) {
@@ -696,39 +700,6 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(0);
         }
     }
-    //    ArrayLiteralExp 
-    // AssocArrayLiteralExp 
-    // BinExp 
-    // ClassReferenceExp 
-    // ComplexExp 
-    // DeclarationExp 
-    // DefaultInitExp 
-    // DsymbolExp 
-    // ErrorExp 
-    // FuncExp 
-    // HaltExp 
-    // IdentifierExp 
-    // IntegerExp 
-    // IntervalExp 
-    // IsExp 
-    // NewAnonClassExp 
-    // NewExp 
-    // NullExp 
-    // OverExp 
-    // RealExp 
-    // ScopeExp 
-    // StringExp 
-    // StructLiteralExp 
-    // SymbolExp 
-    // TemplateExp 
-    // ThisExp 
-    // ThrownExceptionExp 
-    // TraitsExp 
-    // TupleExp 
-    // TypeExp 
-    // TypeidExp 
-    // UnaExp 
-    // VoidInitExp 
 
     extern (C++) final class TemplateParameterVisitor: Visitor {
         alias visit = super.visit;
@@ -761,14 +732,15 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             fatal();
         }
         
-        override void visit(TypeBasic s)      { output = createTypeBasic(s); }
+        override void visit(TypeBasic s)      { output = adaptConstness(s, createTypeBasic(s)); }
         override void visit(TypeClass s)      { output = CppIndirection.toPtr(adaptConstness(s, ScopeHierarchy.create(s.sym))); }
         override void visit(TypeEnum s)       { output = adaptConstness(s, ScopeHierarchy.create(s.sym)); }
         override void visit(TypeFunction s)   { output = adaptConstness(s, createFunction(s)); }
-        override void visit(TypeIdentifier s) { output = createTemplateIndentifier(s); }
+        override void visit(TypeIdentifier s) { output = adaptConstness(s, createTemplateIndentifier(s)); }
         override void visit(TypePointer s)    { output = adaptConstness(s, CppIndirection.toPtr(create(s.next))); }
         override void visit(TypeReference s)  { output = adaptConstness(s, CppIndirection.toRef(create(s.next))); }
         override void visit(TypeStruct s)     { output = adaptConstness(s, ScopeHierarchy.create(s.sym)); }
+        override void visit(Parameter s)      { output = createParameter(s); }
         
         extern(D):
         CppNode output;
@@ -779,11 +751,24 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return visitor.output;
         }
 
-        CppNode adaptConstness(Type type, CppNode node) {
+        static auto create(Parameter s) {
+            scope visitor = new TypeVisitor();
+            s.accept(visitor);
+            return visitor.output;
+        }
+
+        private static CppNode adaptConstness(Type type, CppNode node) {
             return type.isConst ? CppIndirection.toConst(node) : node;
         }
 
-        CppSymbol createFunction(TypeFunction typeFun) {
+        private static CppNode createParameter(Parameter parameter) {
+            CppNode type = TypeVisitor.create(parameter.type);
+            type = parameter.storageClass & STCconst ? CppIndirection.toConst(type) : type;
+            type = parameter.storageClass & STCref ? CppIndirection.toRef(type) : type;
+            return type;
+        }
+
+        private static CppSymbol createFunction(TypeFunction typeFun) {
             auto output = new CppSymbol("", CppSymbol.Kind.Function);
             assert(typeFun);
             assert(typeFun.next);
@@ -793,10 +778,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             assert(parameters);
             if(parameters.dim) {
                 foreach(parameter; *parameters) {
-                    CppNode type = TypeVisitor.create(parameter.type);
-                    if(parameter.storageClass & STCref)
-                        type = CppIndirection.toRef(type);
-                    output.function_args ~= removeConstForValueType(type);
+                    output.function_args ~= removeConstForValueType(createParameter(parameter));
                 }
             } else {
                 output.function_args ~= TypeVisitor.create(Type.tvoid);
@@ -804,11 +786,11 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
             return output;
         }
 
-        CppSymbol createTemplateIndentifier(TypeIdentifier s) {
+        private static CppSymbol createTemplateIndentifier(TypeIdentifier s) {
             return new CppSymbol(s.ident.toString.idup, CppSymbol.Kind.TemplateIdentifier);
         }
 
-        CppNode createTypeBasic(TypeBasic type) {
+        private static CppNode createTypeBasic(TypeBasic type) {
             auto getEncoding = (TypeBasic t) {
                 final switch (t.ty) {
                     case Tvoid:        return "v";
@@ -837,7 +819,7 @@ static if (TARGET_LINUX || TARGET_OSX || TARGET_FREEBSD || TARGET_OPENBSD || TAR
                     case Tcomplex80:   return "Ce";
                 }
             };
-            return adaptConstness(type, new CppSymbol(getEncoding(type), CppSymbol.Kind.Basic));
+            return new CppSymbol(getEncoding(type), CppSymbol.Kind.Basic);
         }
     }
 

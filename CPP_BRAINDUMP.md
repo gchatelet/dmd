@@ -46,7 +46,7 @@ TemplateInstance {
     Objects tdtypes;
 
     // for function template, these are the function arguments
-    Expressions* fargs;         
+    Expressions* fargs;
 }
 
 // e.g. void foo(A, B)()
@@ -69,3 +69,19 @@ TemplateTupleParameter : TemplateParameter {}
 TemplateTypeParameter  : TemplateParameter {}
 TemplateThisParameter  : TemplateParameter {}
 TemplateValueParameter : TemplateParameter {}
+
+-------------------------------------------------------------------------------
+// TemplateDeclaration
+void foo(T)(int, ref T);
+         ^
+ TemplateParameters
+
+// TypeFunction tf = onemember.isFuncDeclaration().type
+void foo(T)(int, ref T);
+^^^^        ^^^^^^^^^^
+tf.next     tf.parameters 
+
+// TemplateInstance
+foo!(int*)
+     ^^^^
+    tdtypes
