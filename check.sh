@@ -3,10 +3,13 @@ clear
 export DEBUG=1
 make -f posix.mak -j9  || { echo 'compilation failed' ; exit 1; }
 
+success=0
+total=0
 for file in `ls test/mangling/*.d`; do
     ./src/dmd -o- -c -main $file >/dev/null 2>&1
     if [ $? -eq 0 ]; then
-        echo $file OK
+        # echo $file OK
+        ((success++))
     else
         echo "######################################################"
         echo ">>>>>" $file "<<<<<"
@@ -14,4 +17,6 @@ for file in `ls test/mangling/*.d`; do
         echo "######################################################"
         ./src/dmd -o- -c -main $file
     fi
+    ((total++))
 done
+echo Success $success/$total.
